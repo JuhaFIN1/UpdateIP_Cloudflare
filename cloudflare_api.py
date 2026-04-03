@@ -1,0 +1,119 @@
+import requests
+import logging
+
+logger = logging.getLogger(__name__)
+
+CF_API_BASE = 'https://api.cloudflare.com/client/v4'
+
+
+def _headers(api_token):
+    return {
+        'Authorization': f'Bearer {api_token}',
+        'Content-Type': 'application/json',
+    }
+
+
+def verify_token(api_token):
+    """Verify that a Cloudflare API token is valid."""
+    try:
+        r = requests.get(f'{CF_API_BASE}/user/tokens/verify',
+                         headers=_headers(api_token), timeout=15)
+        data = r.json()
+        return data.get('success', False)
+    except Exception as e:
+        logger.error(f'Token verification failed: {e}')
+        return False
+
+
+def list_zones(api_token):
+    """Return list of zones accessible with this token."""
+    zones = []
+    page = 1
+    while True:
+        try:
+            r = requests.get(f'{CF_API_BASE}/zones',
+                             headers=_headers(api_token),
+                             params={'page': page, 'per_page': 50},
+                             timeout=15)
+            data = r.json()
+            if not data.get('success'):
+                break
+            zones.extend(data.get('result', []))
+            total_pages = data.get('result_info', {}).get('total_pages', 1)
+            if page >= total_pages:
+                break
+            page += 1
+        except Exception as e:
+            logger.error(f'Failed to list zones: {e}')
+            break
+    return zones
+
+
+def list_dns_records(api_token, zone_id, record_type='A'):
+    """Return list of DNS A records for a zone."""
+    records = []
+    page = 1
+    while True:
+        try:
+            r = requests.get(f'{CF_API_BASE}/zones/{zone_id}/dns_records',
+                             headers=_headers(api_token),
+                             params={'type': record_type, 'page': page, 'per_page': 100},
+                             timeout=15)
+            data = r.json()
+            if not data.get('success'):
+                break
+            records.extend(data.get('result', []))
+            total_pages = data.get('result_info', {}).get('total_pages', 1)
+            if page >= total_pages:
+                break
+            page += 1
+        except Exception as e:
+            logger.error(f'Failed to list DNS records: {e}')
+            break
+    return records
+
+
+def update_dns_record(api_token, zone_id, record_id, name, ip, proxied=False):
+    """Update a DNS A record with a new IP."""
+    try:
+        r = requests.put(
+            f'{CF_API_BASE}/zones/{zone_id}/dns_records/{record_id}',
+            headers=_headers(api_token),
+            json={
+                'type': 'A',
+                'name': name,
+                'content': ip,
+                'proxied': proxied,
+            },
+            timeout=15
+        )
+        data = r.json()
+        if data.get('success'):
+            return True, 'Updated successfully'
+        else:
+            errors = data.get('errors', [])
+            msg = errors[0].get('message', 'Unknown error') if errors else 'Unknown error'
+            return False, msg
+    except Exception as e:
+        logger.error(f'Failed to update DNS record {record_id}: {e}')
+        return False, str(e)
+
+
+def get_public_ip():
+    """Get the current public IP address."""
+    services = [
+        'https://api.ipify.org',
+        'https://ifconfig.me/ip',
+        'https://icanhazip.com',
+        'https://checkip.amazonaws.com',
+    ]
+    for url in services:
+        try:
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                ip = r.text.strip()
+                if ip:
+                    return ip
+        except Exception:
+            continue
+    return None

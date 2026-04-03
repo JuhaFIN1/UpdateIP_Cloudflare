@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - UpdateIP{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-speedometer2 me-2"></i>Dashboard</h2>
+    <div>
+        <form method="POST" action="{{ url_for('manual_update') }}" class="d-inline">
+            <button class="btn btn-primary me-1"><i class="bi bi-arrow-repeat me-1"></i>Check &amp; Update</button>
+        </form>
+        <form method="POST" action="{{ url_for('force_update') }}" class="d-inline">
+            <button class="btn btn-warning"><i class="bi bi-lightning me-1"></i>Force Update All</button>
+        </form>
+    </div>
+</div>
+
+<!-- IP info card -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card bg-primary bg-opacity-10 border-primary">
+            <div class="card-body text-center">
+                <div class="text-muted mb-1">Current Public IP</div>
+                <h3 class="mb-0" id="current-ip">{{ settings['current_ip'] or 'Not detected yet' }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-success bg-opacity-10 border-success">
+            <div class="card-body text-center">
+                <div class="text-muted mb-1">Monitored Records</div>
+                <h3 class="mb-0">{{ records|length }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-info bg-opacity-10 border-info">
+            <div class="card-body text-center">
+                <div class="text-muted mb-1">Update Interval</div>
+                <h3 class="mb-0">{{ settings['update_interval'] }}s</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Monitored records table -->
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-list-check me-1"></i>Auto-Update Records
+    </div>
+    <div class="card-body p-0">
+        {% if records %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Record</th>
+                        <th>Zone</th>
+                        <th>Account</th>
+                        <th>Current IP</th>
+                        <th>Proxied</th>
+                        <th>Status</th>
+                        <th>Last Updated</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for r in records %}
+                <tr>
+                    <td><code>{{ r['name'] }}</code></td>
+                    <td>{{ r['zone_name'] }}</td>
+                    <td>{{ r['account_name'] }}</td>
+                    <td><code>{{ r['content'] }}</code></td>
+                    <td>
+                        {% if r['proxied'] %}
+                        <span class="badge bg-warning text-dark">Proxied</span>
+                        {% else %}
+                        <span class="badge bg-secondary">DNS only</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if r['last_status'] == 'success' %}
+                        <span class="badge bg-success status-badge">OK</span>
+                        {% elif r['last_status'] and 'error' in r['last_status'] %}
+                        <span class="badge bg-danger status-badge" title="{{ r['last_status'] }}">Error</span>
+                        {% else %}
+                        <span class="badge bg-secondary status-badge">Pending</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ r['last_updated'] or '—' }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-muted text-center">
+            No records selected for auto-update. Go to <a href="{{ url_for('records') }}">DNS Records</a> to enable some.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Recent activity -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-clock-history me-1"></i>Recent Activity
+    </div>
+    <div class="card-body p-0">
+        {% if recent_logs %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead>
+                    <tr><th>Time</th><th>Record</th><th>Zone</th><th>Old IP</th><th>New IP</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                {% for l in recent_logs %}
+                <tr>
+                    <td class="text-nowrap">{{ l['updated_at'] }}</td>
+                    <td><code>{{ l['record_name'] }}</code></td>
+                    <td>{{ l['zone_name'] }}</td>
+                    <td><code>{{ l['old_ip'] }}</code></td>
+                    <td><code>{{ l['new_ip'] }}</code></td>
+                    <td>
+                        {% if l['status'] == 'success' %}
+                        <span class="badge bg-success">OK</span>
+                        {% else %}
+                        <span class="badge bg-danger" title="{{ l['message'] }}">Error</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-muted text-center">No update activity yet.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

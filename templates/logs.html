@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Logs - UpdateIP{% endblock %}
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-clock-history me-2"></i>Logs</h2>
+
+<!-- IP Change History -->
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-arrow-left-right me-1"></i>IP Change History
+    </div>
+    <div class="card-body p-0">
+        {% if ip_logs %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead>
+                    <tr><th>Time</th><th>Old IP</th><th>New IP</th></tr>
+                </thead>
+                <tbody>
+                {% for l in ip_logs %}
+                <tr>
+                    <td class="text-nowrap">{{ l['changed_at'] }}</td>
+                    <td><code>{{ l['old_ip'] or '—' }}</code></td>
+                    <td><code>{{ l['new_ip'] }}</code></td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-muted text-center">No IP changes recorded yet.</div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- DNS Update Log -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-pencil-square me-1"></i>DNS Update Log
+    </div>
+    <div class="card-body p-0">
+        {% if update_logs %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead>
+                    <tr><th>Time</th><th>Record</th><th>Zone</th><th>Old IP</th><th>New IP</th><th>Status</th><th>Message</th></tr>
+                </thead>
+                <tbody>
+                {% for l in update_logs %}
+                <tr>
+                    <td class="text-nowrap">{{ l['updated_at'] }}</td>
+                    <td><code>{{ l['record_name'] }}</code></td>
+                    <td>{{ l['zone_name'] }}</td>
+                    <td><code>{{ l['old_ip'] }}</code></td>
+                    <td><code>{{ l['new_ip'] }}</code></td>
+                    <td>
+                        {% if l['status'] == 'success' %}
+                        <span class="badge bg-success">OK</span>
+                        {% else %}
+                        <span class="badge bg-danger">Error</span>
+                        {% endif %}
+                    </td>
+                    <td class="small">{{ l['message'] }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-muted text-center">No DNS updates recorded yet.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

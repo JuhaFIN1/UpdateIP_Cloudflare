@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}DNS Records - UpdateIP{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-list-check me-2"></i>DNS Records</h2>
+    {% if accounts %}
+    <div>
+        {% for acc in accounts %}
+        <form method="POST" action="{{ url_for('account_sync', account_id=acc['id']) }}" class="d-inline">
+            <button class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-arrow-repeat me-1"></i>Sync {{ acc['name'] }}
+            </button>
+        </form>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+{% if records %}
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead>
+                    <tr>
+                        <th>Auto-Update</th>
+                        <th>Record Name</th>
+                        <th>Zone</th>
+                        <th>Account</th>
+                        <th>Current Value</th>
+                        <th>Proxied</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for r in records %}
+                <tr>
+                    <td>
+                        <form method="POST" action="{{ url_for('record_toggle') }}">
+                            <input type="hidden" name="record_id" value="{{ r['id'] }}">
+                            {% if r['auto_update'] %}
+                            <input type="hidden" name="auto_update" value="0">
+                            <button class="btn btn-sm btn-success" title="Click to disable">
+                                <i class="bi bi-check-circle-fill"></i> On
+                            </button>
+                            {% else %}
+                            <input type="hidden" name="auto_update" value="1">
+                            <button class="btn btn-sm btn-outline-secondary" title="Click to enable">
+                                <i class="bi bi-circle"></i> Off
+                            </button>
+                            {% endif %}
+                        </form>
+                    </td>
+                    <td><code>{{ r['name'] }}</code></td>
+                    <td>{{ r['zone_name'] }}</td>
+                    <td>{{ r['account_name'] }}</td>
+                    <td><code>{{ r['content'] }}</code></td>
+                    <td>
+                        {% if r['proxied'] %}
+                        <span class="badge bg-warning text-dark">Proxied</span>
+                        {% else %}
+                        <span class="badge bg-secondary">DNS only</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if r['last_status'] == 'success' %}
+                        <span class="badge bg-success">OK</span>
+                        {% elif r['last_status'] and 'error' in r['last_status'] %}
+                        <span class="badge bg-danger" title="{{ r['last_status'] }}">Error</span>
+                        {% else %}
+                        <span class="badge bg-secondary">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center text-muted py-5">
+        <i class="bi bi-database-slash fs-1 d-block mb-2"></i>
+        No DNS records found. <a href="{{ url_for('accounts') }}">Add a Cloudflare account</a> first,
+        then sync zones to see records here.
+    </div>
+</div>
+{% endif %}
+{% endblock %}

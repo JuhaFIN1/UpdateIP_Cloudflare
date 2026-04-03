@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}{{ action }} Proxy Host - UpdateIP{% endblock %}
+{% block content %}
+<div class="mb-4">
+    <a href="{{ url_for('npm_hosts') }}" class="text-decoration-none">
+        <i class="bi bi-arrow-left me-1"></i>Back to Proxy Manager
+    </a>
+</div>
+<h2 class="mb-4">
+    <i class="bi bi-hdd-network me-2"></i>{{ action }} Proxy Host
+</h2>
+
+<form method="POST">
+    <div class="row">
+        <!-- Left column: Core settings -->
+        <div class="col-lg-7 mb-4">
+            <div class="card">
+                <div class="card-header">Forward Configuration</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Domain Names <span class="text-muted">(comma separated)</span></label>
+                        <input type="text" name="domain_names" class="form-control"
+                               placeholder="example.com, www.example.com"
+                               value="{{ host.get('domain_names', [])|join(', ') if host else '' }}" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Scheme</label>
+                            <select name="forward_scheme" class="form-select">
+                                <option value="http" {% if host and host.get('forward_scheme') == 'http' %}selected{% endif %}>http</option>
+                                <option value="https" {% if host and host.get('forward_scheme') == 'https' %}selected{% endif %}>https</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Forward Host / IP</label>
+                            <input type="text" name="forward_host" class="form-control"
+                                   placeholder="192.168.1.50"
+                                   value="{{ host.get('forward_host', '') if host else '' }}" required>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Forward Port</label>
+                            <input type="number" name="forward_port" class="form-control"
+                                   placeholder="80" min="1" max="65535"
+                                   value="{{ host.get('forward_port', 80) if host else '80' }}" required>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Advanced config -->
+            <div class="card mt-3">
+                <div class="card-header">Advanced Configuration</div>
+                <div class="card-body">
+                    <div class="mb-0">
+                        <label class="form-label">Custom Nginx Configuration <span class="text-muted">(optional)</span></label>
+                        <textarea name="advanced_config" class="form-control font-monospace" rows="5"
+                                  placeholder="# Extra nginx directives...">{{ host.get('advanced_config', '') if host else '' }}</textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right column: Options -->
+        <div class="col-lg-5 mb-4">
+            <div class="card mb-3">
+                <div class="card-header">SSL</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">SSL Certificate</label>
+                        <select name="certificate_id" class="form-select">
+                            <option value="0">None</option>
+                            {% for c in certs %}
+                            <option value="{{ c['id'] }}"
+                                {% if host and host.get('certificate_id') == c['id'] %}selected{% endif %}>
+                                {{ c.get('nice_name', '') or c.get('domain_names', [''])[0] }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" name="ssl_forced" id="ssl_forced"
+                               {% if host and host.get('ssl_forced') %}checked{% endif %}>
+                        <label class="form-check-label" for="ssl_forced">Force SSL</label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" name="http2_support" id="http2_support"
+                               {% if host and host.get('http2_support') %}checked{% endif %}>
+                        <label class="form-check-label" for="http2_support">HTTP/2 Support</label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" name="hsts_enabled" id="hsts_enabled"
+                               {% if host and host.get('hsts_enabled') %}checked{% endif %}>
+                        <label class="form-check-label" for="hsts_enabled">HSTS Enabled</label>
+                    </div>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" name="hsts_subdomains" id="hsts_subdomains"
+                               {% if host and host.get('hsts_subdomains') %}checked{% endif %}>
+                        <label class="form-check-label" for="hsts_subdomains">HSTS Subdomains</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">Options</div>
+                <div class="card-body">
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" name="block_exploits" id="block_exploits"
+                               {% if host and host.get('block_exploits') %}checked{% endif %}>
+                        <label class="form-check-label" for="block_exploits">Block Common Exploits</label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" name="caching_enabled" id="caching_enabled"
+                               {% if host and host.get('caching_enabled') %}checked{% endif %}>
+                        <label class="form-check-label" for="caching_enabled">Cache Assets</label>
+                    </div>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" name="allow_websocket_upgrade" id="allow_websocket_upgrade"
+                               {% if host and host.get('allow_websocket_upgrade') %}checked{% endif %}>
+                        <label class="form-check-label" for="allow_websocket_upgrade">WebSocket Support</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">Access</div>
+                <div class="card-body">
+                    <label class="form-label">Access List</label>
+                    <select name="access_list_id" class="form-select">
+                        <option value="0">Publicly Accessible</option>
+                        {% for a in access_lists %}
+                        <option value="{{ a['id'] }}"
+                            {% if host and host.get('access_list_id') == a['id'] %}selected{% endif %}>
+                            {{ a.get('name', 'List #' ~ a['id']) }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check-lg me-1"></i>{{ action }} Proxy Host
+        </button>
+        <a href="{{ url_for('npm_hosts') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}
