@@ -123,4 +123,4 @@ journalctl -u updateip -f
 
 ## License
 
-MIT License — free to use, modify, and distribute.
+Source Available — free to use and share, but modifications and derivative works are not permitted. See [LICENSE](LICENSE) for details.
