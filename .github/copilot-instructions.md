@@ -1,5 +1,7 @@
 # UpdateIP — Copilot Instructions
 
+**Copyright (c) 2026 Juha Lempiäinen. All rights reserved.**
+
 ## Project Overview
 
 A password-protected Flask web app that monitors public IP changes across multiple WAN interfaces and auto-updates Cloudflare DNS records. Integrates with **UniFi controllers** for automatic WAN IP/ISP detection, **Nginx Proxy Manager** for proxy host management, and **Avahi/mDNS** for local network discovery (default: `updateip.local`).
@@ -29,10 +31,10 @@ templates/          — Jinja2 HTML templates (Bootstrap 5 dark theme)
   base.html         — Layout with sidebar nav
   login.html        — Standalone login page (no sidebar)
   dashboard.html    — WAN IPs, monitored records, recent activity
-  accounts.html     — Cloudflare account management
+  accounts.html     — Cloudflare accounts + UniFi connection + NPM connection (all-in-one)
   records.html      — DNS records grouped by domain with type badges
-  wan.html          — WAN interfaces + UniFi connection settings
-  npm.html          — NPM proxy host listing + connection settings modal
+  wan.html          — WAN interfaces + UniFi sync (connection settings on accounts page)
+  npm.html          — NPM proxy host listing (connection settings on accounts page)
   npm_form.html     — Add/edit proxy host form
   logs.html         — IP change & DNS update history
   settings.html     — Password, timezone, mDNS hostname, system info with sync intervals, backup/restore
@@ -88,9 +90,9 @@ journalctl -u updateip -f
 ## Key Patterns
 
 - **UniFi sync + DNS update flow**: `scheduled_unifi_sync()` refreshes WAN IPs/ISP from UniFi (`stat/device` endpoint for WAN2, `stat/health` for WAN1), then calls `check_and_update_ip()` which compares stored IPs → updates Cloudflare records marked `auto_update=1` → logs to `ip_log` and `update_log`. This is a single merged job — no separate IP check job.
-- **check_and_update_ip()**: Always iterates all `auto_update=1` records. Records already matching the target IP are marked `last_status='success'` with a timestamp (not skipped). Only calls the Cloudflare API when the record content differs or `force=True`. Logs to `update_log` only when the Cloudflare API is called (actual update or force), not for already-matching records.
-- **Dashboard Recent Activity**: Reads from `update_log` table (last 20 entries). Shows time, record, zone, old IP, new IP, and status. Only populated when DNS records are actually pushed to Cloudflare (IP change or Force Update). Timestamps use `|localtime` filter.
-- **Multi-WAN**: Each `wan_interface` has a `detect_method` (unifi/static/auto). Each DNS record can be assigned to a specific WAN via `wan_id`. Unassigned records use auto-detected IP.
+- **check_and_update_ip()**: Always iterates all `auto_update=1` records. Every check logs to `update_log` with three statuses: `no_change` (IP matches, no API call), `changed` (IP differed, pushed to Cloudflare), `error` (Cloudflare API failed). Records with an explicit `wan_id` **never** fall back to `auto_ip` — if their WAN IP is unavailable, they are skipped to prevent cross-WAN contamination. Only unassigned records (no `wan_id`) use `auto_ip`.
+- **Dashboard**: Monitored records table shows "Last Checked" column (timestamp of last verification, not necessarily a Cloudflare push). Recent Activity section (last 20 `update_log` entries) shows status badges: **No Change** (green), **Changed** (yellow), **Error** (red). Timestamps use `|localtime` filter.
+- **Multi-WAN**: Each `wan_interface` has a `detect_method` (unifi/static/auto). Each DNS record can be assigned to a specific WAN via `wan_id`. Unassigned records use auto-detected IP. WAN-assigned records are protected from fallback — they will be skipped rather than updated with the wrong WAN's IP.
 - **ISP detection**: UniFi provides ISP for WAN1 via `stat/health`. For WANs missing ISP info, `ip-api.com` is used as fallback.
 - **Scheduler**: 3 APScheduler interval jobs: `unifi_sync` (WAN IPs + DNS updates), `cloudflare_sync` (re-sync records from Cloudflare), `npm_sync` (verify NPM connection). All intervals user-configurable (60s–86400s).
 - **NPM integration**: `npm_api.py:NpmClient` authenticates via JWT token, stored credentials in `npm_settings` table. All proxy host CRUD goes through the NPM REST API.
@@ -103,5 +105,6 @@ journalctl -u updateip -f
 - Default login: `admin` / `admin` — user should change via Settings.
 - The venv is at `/root/Updateip/venv/` — always activate before running Python manually.
 - Cloudflare API tokens need `Zone:DNS:Edit` + `Zone:Zone:Read` permissions.
-- NPM connection configured in-app via Proxy Manager page.
-- UniFi controller connection configured in-app via WAN Interfaces page. Create a local-only admin on UniFi OS for best security.
+- NPM connection configured in-app via Accounts page.
+- UniFi controller connection configured in-app via Accounts page. Create a local-only admin on UniFi OS for best security.
+- All new Python files must include the copyright header: `# UpdateIP - Copyright (c) 2026 Juha Lempiäinen. All rights reserved.`

@@ -1,3 +1,6 @@
+# UpdateIP - Copyright (c) 2026 Juha Lempiäinen. All rights reserved.
+# https://github.com/JuhaFIN1/Updateip
+
 import logging
 from datetime import datetime, timezone
 from database import get_db
@@ -108,8 +111,19 @@ def check_and_update_ip(force=False):
         errors = 0
         now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
         for rec in records:
-            if rec['wan_id'] and rec['wan_id'] in wan_ips:
-                target_ip = wan_ips[rec['wan_id']]
+            if rec['wan_id']:
+                if rec['wan_id'] in wan_ips:
+                    target_ip = wan_ips[rec['wan_id']]
+                else:
+                    # WAN-specific record but that WAN's IP is unavailable — skip
+                    # to avoid overwriting with the wrong WAN's IP
+                    logger.warning('Skipping %s: WAN id %s IP not available', rec['name'], rec['wan_id'])
+                    db.execute('''
+                        INSERT INTO update_log (record_id, record_name, zone_name, old_ip, new_ip, status, message)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (rec['id'], rec['name'], rec['zone_name'], rec['content'], rec['content'],
+                          'skipped', f'WAN id {rec["wan_id"]} IP not available'))
+                    continue
             elif auto_ip:
                 target_ip = auto_ip
             else:
@@ -119,13 +133,17 @@ def check_and_update_ip(force=False):
                 # Already correct — mark as current
                 db.execute('UPDATE cf_records SET last_updated = ?, last_status = ? WHERE id = ?',
                            (now, 'success', rec['id']))
+                db.execute('''
+                    INSERT INTO update_log (record_id, record_name, zone_name, old_ip, new_ip, status, message)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (rec['id'], rec['name'], rec['zone_name'], rec['content'], target_ip, 'no_change', 'IP unchanged'))
                 continue
 
             success, msg = update_dns_record(
                 rec['api_token'], rec['zone_id'], rec['id'],
                 rec['name'], target_ip, bool(rec['proxied'])
             )
-            status = 'success' if success else 'error'
+            status = 'changed' if success else 'error'
             db.execute('''
                 INSERT INTO update_log (record_id, record_name, zone_name, old_ip, new_ip, status, message)
                 VALUES (?, ?, ?, ?, ?, ?, ?)

@@ -62,48 +62,49 @@
                         <th>Current IP</th>
                         <th>Proxied</th>
                         <th>Status</th>
-                        <th>Last Updated</th>
+                        <th>Last Checked</th>
                     </tr>
                 </thead>
                 <tbody>
-                {% for r in records %}
-                <tr>
-                    <td><code>{{ r['name'] }}</code></td>
-                    <td>{{ r['zone_name'] }}</td>
-                    <td>{{ r['account_name'] }}</td>
-                    <td>
-                        {% if r['wan_name'] %}
-                        <span class="badge bg-info">{{ r['wan_name'] }}</span>
-                        {% else %}
-                        <span class="badge bg-secondary">Default</span>
-                        {% endif %}
-                    </td>
-                    <td><code>{{ r['content'] }}</code></td>
-                    <td>
-                        {% if r['proxied'] %}
-                        <span class="badge bg-warning text-dark">Proxied</span>
-                        {% else %}
-                        <span class="badge bg-secondary">DNS only</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if r['last_status'] == 'success' %}
-                        <span class="badge bg-success status-badge">OK</span>
-                        {% elif r['last_status'] and 'error' in r['last_status'] %}
-                        <span class="badge bg-danger status-badge" title="{{ r['last_status'] }}">Error</span>
-                        {% else %}
-                        <span class="badge bg-secondary status-badge">Pending</span>
-                        {% endif %}
-                    </td>
-                    <td>{{ r['last_updated']|localtime or '—' }}</td>
-                </tr>
-                {% endfor %}
+                    {% for r in records %}
+                    <tr>
+                        <td><code>{{ r['name'] }}</code></td>
+                        <td>{{ r['zone_name'] }}</td>
+                        <td>{{ r['account_name'] }}</td>
+                        <td>
+                            {% if r['wan_name'] %}
+                            <span class="badge bg-info">{{ r['wan_name'] }}</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Default</span>
+                            {% endif %}
+                        </td>
+                        <td><code>{{ r['content'] }}</code></td>
+                        <td>
+                            {% if r['proxied'] %}
+                            <span class="badge bg-warning text-dark">Proxied</span>
+                            {% else %}
+                            <span class="badge bg-secondary">DNS only</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if r['last_status'] == 'success' %}
+                            <span class="badge bg-success status-badge">OK</span>
+                            {% elif r['last_status'] and 'error' in r['last_status'] %}
+                            <span class="badge bg-danger status-badge" title="{{ r['last_status'] }}">Error</span>
+                            {% else %}
+                            <span class="badge bg-secondary status-badge">Pending</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ r['last_updated']|localtime or '—' }}</td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
         {% else %}
         <div class="p-4 text-muted text-center">
-            No records selected for auto-update. Go to <a href="{{ url_for('records') }}">DNS Records</a> to enable some.
+            No records selected for auto-update. Go to <a href="{{ url_for('records') }}">DNS Records</a> to enable
+            some.
         </div>
         {% endif %}
     </div>
@@ -119,25 +120,36 @@
         <div class="table-responsive">
             <table class="table table-sm table-hover mb-0">
                 <thead>
-                    <tr><th>Time</th><th>Record</th><th>Zone</th><th>Old IP</th><th>New IP</th><th>Status</th></tr>
+                    <tr>
+                        <th>Time</th>
+                        <th>Record</th>
+                        <th>Zone</th>
+                        <th>Old IP</th>
+                        <th>New IP</th>
+                        <th>Status</th>
+                    </tr>
                 </thead>
                 <tbody>
-                {% for l in recent_logs %}
-                <tr>
-                    <td class="text-nowrap">{{ l['updated_at']|localtime }}</td>
-                    <td><code>{{ l['record_name'] }}</code></td>
-                    <td>{{ l['zone_name'] }}</td>
-                    <td><code>{{ l['old_ip'] }}</code></td>
-                    <td><code>{{ l['new_ip'] }}</code></td>
-                    <td>
-                        {% if l['status'] == 'success' %}
-                        <span class="badge bg-success">OK</span>
-                        {% else %}
-                        <span class="badge bg-danger" title="{{ l['message'] }}">Error</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
+                    {% for l in recent_logs %}
+                    <tr>
+                        <td class="text-nowrap">{{ l['updated_at']|localtime }}</td>
+                        <td><code>{{ l['record_name'] }}</code></td>
+                        <td>{{ l['zone_name'] }}</td>
+                        <td><code>{{ l['old_ip'] }}</code></td>
+                        <td><code>{{ l['new_ip'] }}</code></td>
+                        <td>
+                            {% if l['status'] == 'no_change' %}
+                            <span class="badge bg-success">No Change</span>
+                            {% elif l['status'] == 'changed' %}
+                            <span class="badge bg-warning text-dark">Changed</span>
+                            {% elif l['status'] == 'skipped' %}
+                            <span class="badge bg-secondary" title="{{ l['message'] }}">Skipped</span>
+                            {% else %}
+                            <span class="badge bg-danger" title="{{ l['message'] }}">Error</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>

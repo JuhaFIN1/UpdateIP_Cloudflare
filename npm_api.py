@@ -1,3 +1,6 @@
+# UpdateIP - Copyright (c) 2026 Juha Lempiäinen. All rights reserved.
+# https://github.com/JuhaFIN1/Updateip
+
 import requests
 import logging
 

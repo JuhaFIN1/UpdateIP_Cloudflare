@@ -1,3 +1,6 @@
+# UpdateIP - Copyright (c) 2026 Juha Lempiäinen. All rights reserved.
+# https://github.com/JuhaFIN1/Updateip
+
 import requests
 import logging
 import time
@@ -26,11 +29,20 @@ class UnifiClient:
         self.session.verify = self.verify_ssl
         self._logged_in = False
         self._login_time = 0
+        self._login_backoff_until = 0  # timestamp: don't attempt login before this
 
     def login(self):
         """Authenticate with the UniFi controller."""
         self._logged_in = False
+        now = time.time()
+        # Respect backoff from previous 403 (rate-limit)
+        if now < self._login_backoff_until:
+            logger.debug('UniFi login skipped — backing off until %s',
+                         time.strftime('%H:%M:%S', time.localtime(self._login_backoff_until)))
+            return False
         try:
+            # Clear stale cookies/CSRF tokens before re-login
+            self.session.cookies.clear()
             r = self.session.post(
                 f'{self.base_url}/api/auth/login',
                 json={'username': self.username, 'password': self.password},
@@ -38,10 +50,16 @@ class UnifiClient:
             )
             if r.status_code == 200:
                 self._logged_in = True
-                self._login_time = time.time()
+                self._login_time = now
+                self._login_backoff_until = 0
                 logger.info('UniFi login successful')
                 return True
-            logger.warning('UniFi login failed: HTTP %s — %s', r.status_code, r.text[:200])
+            if r.status_code == 403:
+                # UniFi OS rate-limited — back off for 5 minutes
+                self._login_backoff_until = now + 300
+                logger.warning('UniFi login rate-limited (403), backing off 5 min')
+            else:
+                logger.warning('UniFi login failed: HTTP %s — %s', r.status_code, r.text[:200])
             return False
         except Exception as e:
             logger.error('UniFi login error: %s', e)
@@ -54,14 +72,14 @@ class UnifiClient:
         return self.login()
 
     def _request(self, method, path, **kwargs):
-        """Make an authenticated request with auto-retry on 401."""
+        """Make an authenticated request with auto-retry on 401/403."""
         if not self._ensure_logged_in():
             return None
         kwargs.setdefault('timeout', 15)
         url = f'{self.base_url}{path}'
         r = getattr(self.session, method)(url, **kwargs)
-        if r.status_code == 401:
-            logger.info('UniFi session expired, re-authenticating')
+        if r.status_code in (401, 403):
+            logger.info('UniFi session expired (%s), re-authenticating', r.status_code)
             self._logged_in = False
             if self.login():
                 r = getattr(self.session, method)(url, **kwargs)
@@ -213,8 +231,9 @@ class UnifiClient:
             )
             if r.status_code == 200:
                 return True
-            if r.status_code == 401:
-                # Session expired, try one re-login
+            if r.status_code in (401, 403):
+                # Session expired or invalidated, try one re-login
+                self._logged_in = False
                 return self.login()
             return False
         except Exception:

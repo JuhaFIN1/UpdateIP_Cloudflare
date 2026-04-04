@@ -4,9 +4,6 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="bi bi-diagram-3 me-2"></i>WAN Interfaces</h2>
     <div>
-        <button class="btn btn-outline-info me-1" data-bs-toggle="modal" data-bs-target="#unifiModal">
-            <i class="bi bi-router me-1"></i>UniFi Connection
-        </button>
         {% if unifi_connected %}
         <form method="POST" action="{{ url_for('wan_unifi_sync') }}" class="d-inline">
             <button class="btn btn-outline-primary me-1">
@@ -35,22 +32,29 @@
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-sm table-hover mb-0">
-                <thead><tr><th>UniFi WAN</th><th>Operator / ISP</th><th>Current IP</th><th>Status</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th>UniFi WAN</th>
+                        <th>Operator / ISP</th>
+                        <th>Current IP</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
                 <tbody>
-                {% for name, info in unifi_wans.items() %}
-                <tr>
-                    <td><strong>{{ name }}</strong></td>
-                    <td>{{ info.isp_name or info.isp_org or '—' }}</td>
-                    <td><code>{{ info.ip or '—' }}</code></td>
-                    <td>
-                        {% if info.status == 'ok' %}
-                        <span class="badge bg-success">OK</span>
-                        {% else %}
-                        <span class="badge bg-danger">{{ info.status }}</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
+                    {% for name, info in unifi_wans.items() %}
+                    <tr>
+                        <td><strong>{{ name }}</strong></td>
+                        <td>{{ info.isp_name or info.isp_org or '—' }}</td>
+                        <td><code>{{ info.ip or '—' }}</code></td>
+                        <td>
+                            {% if info.status == 'ok' %}
+                            <span class="badge bg-success">OK</span>
+                            {% else %}
+                            <span class="badge bg-danger">{{ info.status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
@@ -78,35 +82,35 @@
                     </tr>
                 </thead>
                 <tbody>
-                {% for w in wans %}
-                <tr>
-                    <td><strong>{{ w['name'] }}</strong></td>
-                    <td>
-                        {% if w['detect_method'] == 'unifi' %}
-                        <span class="badge bg-info">UniFi</span>
-                        {% elif w['detect_method'] == 'static' %}
-                        <span class="badge bg-warning text-dark">Static</span>
-                        {% else %}
-                        <span class="badge bg-primary">Auto-Detect</span>
-                        {% endif %}
-                    </td>
-                    <td><code>{{ w['current_ip'] or '—' }}</code></td>
-                    <td class="small text-muted">{{ w['isp_name'] or '—' }}</td>
-                    <td>{{ w['last_checked']|localtime or '—' }}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-primary me-1" data-bs-toggle="modal"
+                    {% for w in wans %}
+                    <tr>
+                        <td><strong>{{ w['name'] }}</strong></td>
+                        <td>
+                            {% if w['detect_method'] == 'unifi' %}
+                            <span class="badge bg-info">UniFi</span>
+                            {% elif w['detect_method'] == 'static' %}
+                            <span class="badge bg-warning text-dark">Static</span>
+                            {% else %}
+                            <span class="badge bg-primary">Auto-Detect</span>
+                            {% endif %}
+                        </td>
+                        <td><code>{{ w['current_ip'] or '—' }}</code></td>
+                        <td class="small text-muted">{{ w['isp_name'] or '—' }}</td>
+                        <td>{{ w['last_checked']|localtime or '—' }}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary me-1" data-bs-toggle="modal"
                                 data-bs-target="#editWanModal{{ w['id'] }}">
-                            <i class="bi bi-pencil"></i>
-                        </button>
-                        <form method="POST" action="{{ url_for('wan_delete', wan_id=w['id']) }}" class="d-inline"
-                              onsubmit="return confirm('Delete this WAN? Records using it will be unassigned.')">
-                            <button class="btn btn-sm btn-outline-danger">
-                                <i class="bi bi-trash"></i>
+                                <i class="bi bi-pencil"></i>
                             </button>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
+                            <form method="POST" action="{{ url_for('wan_delete', wan_id=w['id']) }}" class="d-inline"
+                                onsubmit="return confirm('Delete this WAN? Records using it will be unassigned.')">
+                                <button class="btn btn-sm btn-outline-danger">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
@@ -130,27 +134,35 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">IP Detection Method</label>
-                        <select name="detect_method" class="form-select edit-detect-method" data-wan-id="{{ w['id'] }}" onchange="toggleEditFields(this, '{{ w['id'] }}')">
-                            <option value="auto" {% if w['detect_method'] == 'auto' %}selected{% endif %}>Auto-Detect (external IP services)</option>
-                            <option value="unifi" {% if w['detect_method'] == 'unifi' %}selected{% endif %}>UniFi Controller</option>
-                            <option value="static" {% if w['detect_method'] == 'static' %}selected{% endif %}>Static IP</option>
+                        <select name="detect_method" class="form-select edit-detect-method" data-wan-id="{{ w['id'] }}"
+                            onchange="toggleEditFields(this, '{{ w['id'] }}')">
+                            <option value="auto" {% if w['detect_method']=='auto' %}selected{% endif %}>Auto-Detect
+                                (external IP services)</option>
+                            <option value="unifi" {% if w['detect_method']=='unifi' %}selected{% endif %}>UniFi
+                                Controller</option>
+                            <option value="static" {% if w['detect_method']=='static' %}selected{% endif %}>Static IP
+                            </option>
                         </select>
                     </div>
-                    <div class="mb-3 {% if w['detect_method'] != 'static' %}d-none{% endif %}" id="edit_static_ip_group_{{ w['id'] }}">
+                    <div class="mb-3 {% if w['detect_method'] != 'static' %}d-none{% endif %}"
+                        id="edit_static_ip_group_{{ w['id'] }}">
                         <label class="form-label">Static IP Address</label>
                         <input type="text" name="static_ip" class="form-control" value="{{ w['static_ip'] or '' }}"
-                               placeholder="e.g. 203.0.113.50">
+                            placeholder="e.g. 203.0.113.50">
                     </div>
-                    <div class="mb-3 {% if w['detect_method'] != 'unifi' %}d-none{% endif %}" id="edit_unifi_wan_group_{{ w['id'] }}">
+                    <div class="mb-3 {% if w['detect_method'] != 'unifi' %}d-none{% endif %}"
+                        id="edit_unifi_wan_group_{{ w['id'] }}">
                         <label class="form-label">UniFi WAN Name</label>
                         <select name="unifi_wan_name" class="form-select">
                             <option value="">Select...</option>
                             {% for name in unifi_wans %}
-                            <option value="{{ name }}" {% if w['unifi_wan_name'] == name %}selected{% endif %}>{{ name }}{% if unifi_wans[name].isp_name %} ({{ unifi_wans[name].isp_name }}){% endif %} — {{ unifi_wans[name].ip }}</option>
+                            <option value="{{ name }}" {% if w['unifi_wan_name']==name %}selected{% endif %}>{{ name
+                                }}{% if unifi_wans[name].isp_name %} ({{ unifi_wans[name].isp_name }}){% endif %} — {{
+                                unifi_wans[name].ip }}</option>
                             {% endfor %}
                             {% if not unifi_wans %}
-                            <option value="WAN" {% if w['unifi_wan_name'] == 'WAN' %}selected{% endif %}>WAN</option>
-                            <option value="WAN2" {% if w['unifi_wan_name'] == 'WAN2' %}selected{% endif %}>WAN2</option>
+                            <option value="WAN" {% if w['unifi_wan_name']=='WAN' %}selected{% endif %}>WAN</option>
+                            <option value="WAN2" {% if w['unifi_wan_name']=='WAN2' %}selected{% endif %}>WAN2</option>
                             {% endif %}
                         </select>
                     </div>
@@ -189,11 +201,12 @@
                     <div class="mb-3">
                         <label class="form-label">Name</label>
                         <input type="text" name="name" class="form-control" required
-                               placeholder="e.g. WAN 1, Fiber, 4G Backup">
+                            placeholder="e.g. WAN 1, Fiber, 4G Backup">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">IP Detection Method</label>
-                        <select name="detect_method" class="form-select" id="add_detect_method" onchange="toggleAddFields()">
+                        <select name="detect_method" class="form-select" id="add_detect_method"
+                            onchange="toggleAddFields()">
                             <option value="auto">Auto-Detect (external IP services)</option>
                             <option value="unifi">UniFi Controller</option>
                             <option value="static">Static IP</option>
@@ -201,15 +214,15 @@
                     </div>
                     <div class="mb-3 d-none" id="add_static_ip_group">
                         <label class="form-label">Static IP Address</label>
-                        <input type="text" name="static_ip" class="form-control"
-                               placeholder="e.g. 203.0.113.50">
+                        <input type="text" name="static_ip" class="form-control" placeholder="e.g. 203.0.113.50">
                     </div>
                     <div class="mb-3 d-none" id="add_unifi_wan_group">
                         <label class="form-label">UniFi WAN Name</label>
                         <select name="unifi_wan_name" class="form-select">
                             <option value="">Select...</option>
                             {% for name in unifi_wans %}
-                            <option value="{{ name }}">{{ name }}{% if unifi_wans[name].isp_name %} ({{ unifi_wans[name].isp_name }}){% endif %} — {{ unifi_wans[name].ip }}</option>
+                            <option value="{{ name }}">{{ name }}{% if unifi_wans[name].isp_name %} ({{
+                                unifi_wans[name].isp_name }}){% endif %} — {{ unifi_wans[name].ip }}</option>
                             {% endfor %}
                             {% if not unifi_wans %}
                             <option value="WAN">WAN</option>
@@ -218,7 +231,8 @@
                         </select>
                         {% if not unifi_connected %}
                         <div class="form-text text-warning">
-                            <i class="bi bi-exclamation-triangle me-1"></i>UniFi not connected. Configure connection first for live WAN list.
+                            <i class="bi bi-exclamation-triangle me-1"></i>UniFi not connected. Configure connection
+                            first for live WAN list.
                         </div>
                         {% endif %}
                     </div>
@@ -234,88 +248,19 @@
     </div>
 </div>
 
-<!-- UniFi Connection Modal -->
-<div class="modal fade" id="unifiModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="POST" action="{{ url_for('wan_unifi_settings') }}">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-router me-2"></i>UniFi Controller Connection</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="alert alert-info small mb-3">
-                        <i class="bi bi-info-circle me-1"></i><strong>How to get credentials:</strong>
-                        <ol class="mb-0 mt-1">
-                            <li>Open your UniFi OS console in a browser (e.g. <code>https://192.168.1.1</code>)</li>
-                            <li>Log in with your <strong>Ubiquiti account</strong> (UI.com SSO) or <strong>local user</strong></li>
-                            <li>For best practice, create a dedicated <strong>local-only admin</strong>:
-                                <ul>
-                                    <li>Go to <strong>OS Settings</strong> &rarr; <strong>Admins &amp; Users</strong></li>
-                                    <li>Click <strong>Add Admin</strong> &rarr; choose <strong>Local Access Only</strong></li>
-                                    <li>Set a username/password and assign the <strong>Administrator</strong> role</li>
-                                </ul>
-                            </li>
-                            <li>Use that local username &amp; password below</li>
-                            <li>The <strong>Controller URL</strong> is your UDM's IP with <code>https://</code> (e.g. <code>https://192.168.1.1</code>)</li>
-                        </ol>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Controller URL</label>
-                        <input type="url" name="url" class="form-control"
-                               value="{{ unifi['url'] }}" required
-                               placeholder="https://192.168.1.1">
-                        <div class="form-text">Your UDM-SE gateway IP with https:// — no trailing slash.</div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Username</label>
-                        <input type="text" name="username" class="form-control"
-                               value="{{ unifi['username'] }}" required autocomplete="off">
-                        <div class="form-text">Local admin username (not your UI.com email — use a local-only account).</div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Password</label>
-                        <input type="password" name="password" class="form-control" required autocomplete="off"
-                               placeholder="{% if unifi['password'] %}(stored){% endif %}">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Site Name</label>
-                        <input type="text" name="site_name" class="form-control"
-                               value="{{ unifi['site_name'] or 'default' }}"
-                               placeholder="default">
-                        <div class="form-text">Usually "default" for single-site setups.</div>
-                    </div>
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" name="verify_ssl" id="verify_ssl"
-                               {% if unifi['verify_ssl'] %}checked{% endif %}>
-                        <label class="form-check-label" for="verify_ssl">
-                            Verify SSL certificate
-                        </label>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-check-lg me-1"></i>Save &amp; Test
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-function toggleAddFields() {
-    const method = document.getElementById('add_detect_method').value;
-    document.getElementById('add_static_ip_group').classList.toggle('d-none', method !== 'static');
-    document.getElementById('add_unifi_wan_group').classList.toggle('d-none', method !== 'unifi');
-}
-function toggleEditFields(el, wanId) {
-    const method = el.value;
-    document.getElementById('edit_static_ip_group_' + wanId).classList.toggle('d-none', method !== 'static');
-    document.getElementById('edit_unifi_wan_group_' + wanId).classList.toggle('d-none', method !== 'unifi');
-}
+    function toggleAddFields() {
+        const method = document.getElementById('add_detect_method').value;
+        document.getElementById('add_static_ip_group').classList.toggle('d-none', method !== 'static');
+        document.getElementById('add_unifi_wan_group').classList.toggle('d-none', method !== 'unifi');
+    }
+    function toggleEditFields(el, wanId) {
+        const method = el.value;
+        document.getElementById('edit_static_ip_group_' + wanId).classList.toggle('d-none', method !== 'static');
+        document.getElementById('edit_unifi_wan_group_' + wanId).classList.toggle('d-none', method !== 'unifi');
+    }
 </script>
 {% endblock %}

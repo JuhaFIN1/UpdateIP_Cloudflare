@@ -1,3 +1,6 @@
+# UpdateIP - Copyright (c) 2026 Juha Lempiäinen. All rights reserved.
+# https://github.com/JuhaFIN1/Updateip
+
 import os
 import json
 import logging
@@ -113,7 +116,7 @@ def scheduled_unifi_sync():
     """Background job: refresh WAN IPs from UniFi, then check & update DNS."""
     with app.app_context():
         client = get_unifi_client()
-        if client and client.is_connected():
+        if client and client._ensure_logged_in():
             wan_details = client.get_wan_details()
             if wan_details:
                 db = get_db()
@@ -245,8 +248,21 @@ def dashboard():
 def accounts():
     db = get_db()
     accs = db.execute('SELECT * FROM cf_accounts ORDER BY name').fetchall()
+    unifi = db.execute('SELECT * FROM unifi_settings WHERE id = 1').fetchone()
+    npm = db.execute('SELECT * FROM npm_settings WHERE id = 1').fetchone()
     db.close()
-    return render_template('accounts.html', accounts=accs)
+    # Check live connection status
+    unifi_connected = False
+    client = get_unifi_client()
+    if client:
+        unifi_connected = client.is_connected()
+    npm_connected = False
+    npm_client = get_npm_client()
+    if npm_client:
+        npm_connected = npm_client.test_connection()
+    return render_template('accounts.html', accounts=accs, unifi=unifi,
+                           unifi_connected=unifi_connected, npm=npm,
+                           npm_connected=npm_connected)
 
 
 @app.route('/accounts/add', methods=['POST'])
@@ -1026,19 +1042,19 @@ def npm_settings_save():
     password = request.form.get('password', '')
     if not url or not email or not password:
         flash('All NPM connection fields are required', 'danger')
-        return redirect(url_for('npm_hosts'))
+        return redirect(url_for('accounts'))
     # Test connection
     client = NpmClient(url, email, password)
     if not client.test_connection():
         flash('Could not connect to NPM. Check URL and credentials.', 'danger')
-        return redirect(url_for('npm_hosts'))
+        return redirect(url_for('accounts'))
     db = get_db()
     db.execute('UPDATE npm_settings SET url = ?, email = ?, password = ? WHERE id = 1',
                (url, email, password))
     db.commit()
     db.close()
     flash('NPM connection saved and verified', 'success')
-    return redirect(url_for('npm_hosts'))
+    return redirect(url_for('accounts'))
 
 
 @app.route('/npm/add', methods=['GET', 'POST'])
@@ -1268,13 +1284,13 @@ def wan_unifi_settings():
     verify_ssl = 1 if request.form.get('verify_ssl') == 'on' else 0
     if not url or not username or not password:
         flash('All UniFi connection fields are required', 'danger')
-        return redirect(url_for('wan_list'))
+        return redirect(url_for('accounts'))
     # Clear cached client since credentials are changing
     clear_cached_client()
     client = UnifiClient(url, username, password, site=site_name, verify_ssl=bool(verify_ssl))
     if not client.test_connection():
         flash('Could not connect to UniFi controller. Check URL and credentials.', 'danger')
-        return redirect(url_for('wan_list'))
+        return redirect(url_for('accounts'))
     db = get_db()
     db.execute(
         'UPDATE unifi_settings SET url = ?, username = ?, password = ?, site_name = ?, verify_ssl = ? WHERE id = 1',
@@ -1284,7 +1300,7 @@ def wan_unifi_settings():
     # Force new cached client with the saved credentials
     clear_cached_client()
     flash('UniFi connection saved and verified', 'success')
-    return redirect(url_for('wan_list'))
+    return redirect(url_for('accounts'))
 
 
 @app.route('/wan/unifi-sync', methods=['POST'])

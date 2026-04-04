@@ -1,22 +1,25 @@
 {% extends "base.html" %}
-{% block title %}Cloudflare Accounts - UpdateIP{% endblock %}
+{% block title %}Accounts - UpdateIP{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="bi bi-cloud me-2"></i>Cloudflare Accounts</h2>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal">
+<h2 class="mb-4"><i class="bi bi-person-gear me-2"></i>Accounts &amp; Connections</h2>
+
+<!-- ====== Cloudflare Accounts ====== -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0"><i class="bi bi-cloud-fill text-warning me-2"></i>Cloudflare Accounts</h5>
+    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addCfModal">
         <i class="bi bi-plus-lg me-1"></i>Add Account
     </button>
 </div>
 
 {% if accounts %}
-<div class="row">
+<div class="row mb-4">
     {% for acc in accounts %}
     <div class="col-md-6 col-lg-4 mb-3">
         <div class="card h-100">
             <div class="card-body">
-                <h5 class="card-title">
+                <h6 class="card-title mb-1">
                     <i class="bi bi-cloud-fill text-warning me-2"></i>{{ acc['name'] }}
-                </h5>
+                </h6>
                 <p class="text-muted small mb-1">
                     Token: <code>{{ acc['api_token'][:8] }}...{{ acc['api_token'][-4:] }}</code>
                 </p>
@@ -29,7 +32,7 @@
                     </button>
                 </form>
                 <form method="POST" action="{{ url_for('account_delete', account_id=acc['id']) }}"
-                      onsubmit="return confirm('Delete this account and all its records?')">
+                    onsubmit="return confirm('Delete this account and all its records?')">
                     <button class="btn btn-sm btn-outline-danger">
                         <i class="bi bi-trash me-1"></i>Delete
                     </button>
@@ -40,17 +43,106 @@
     {% endfor %}
 </div>
 {% else %}
-<div class="card">
-    <div class="card-body text-center text-muted py-5">
-        <i class="bi bi-cloud-slash fs-1 d-block mb-2"></i>
-        No Cloudflare accounts configured yet.<br>
-        Click <strong>Add Account</strong> to get started.
+<div class="card mb-4">
+    <div class="card-body text-center text-muted py-4">
+        <i class="bi bi-cloud-slash fs-3 d-block mb-2"></i>
+        No Cloudflare accounts configured yet. Click <strong>Add Account</strong> to get started.
     </div>
 </div>
 {% endif %}
 
-<!-- Add Account Modal -->
-<div class="modal fade" id="addAccountModal" tabindex="-1">
+<hr class="border-secondary my-4">
+
+<!-- ====== UniFi Connection ====== -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">
+        <i class="bi bi-router me-2"></i>UniFi Controller
+        {% if unifi and unifi['url'] %}
+        {% if unifi_connected %}
+        <span class="badge bg-success ms-2">Connected</span>
+        {% else %}
+        <span class="badge bg-danger ms-2">Disconnected</span>
+        {% endif %}
+        {% endif %}
+    </h5>
+    <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#unifiModal">
+        <i class="bi bi-plug me-1"></i>{% if unifi and unifi['url'] %}Edit{% else %}Configure{% endif %}
+    </button>
+</div>
+
+{% if unifi and unifi['url'] %}
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-sm-6">
+                <small class="text-muted">URL</small>
+                <div><code>{{ unifi['url'] }}</code></div>
+            </div>
+            <div class="col-sm-3">
+                <small class="text-muted">Username</small>
+                <div>{{ unifi['username'] }}</div>
+            </div>
+            <div class="col-sm-3">
+                <small class="text-muted">Site</small>
+                <div>{{ unifi['site_name'] or 'default' }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card mb-4">
+    <div class="card-body text-center text-muted py-4">
+        <i class="bi bi-router fs-3 d-block mb-2"></i>
+        UniFi controller not configured. Click <strong>Configure</strong> to connect.
+    </div>
+</div>
+{% endif %}
+
+<hr class="border-secondary my-4">
+
+<!-- ====== NPM Connection ====== -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">
+        <i class="bi bi-hdd-network me-2"></i>Nginx Proxy Manager
+        {% if npm and npm['url'] %}
+        {% if npm_connected %}
+        <span class="badge bg-success ms-2">Connected</span>
+        {% else %}
+        <span class="badge bg-danger ms-2">Disconnected</span>
+        {% endif %}
+        {% endif %}
+    </h5>
+    <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#npmModal">
+        <i class="bi bi-plug me-1"></i>{% if npm and npm['url'] %}Edit{% else %}Configure{% endif %}
+    </button>
+</div>
+
+{% if npm and npm['url'] %}
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-sm-6">
+                <small class="text-muted">URL</small>
+                <div><code>{{ npm['url'] }}</code></div>
+            </div>
+            <div class="col-sm-6">
+                <small class="text-muted">Email</small>
+                <div>{{ npm['email'] }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card mb-4">
+    <div class="card-body text-center text-muted py-4">
+        <i class="bi bi-hdd-network fs-3 d-block mb-2"></i>
+        NPM not configured. Click <strong>Configure</strong> to connect.
+    </div>
+</div>
+{% endif %}
+
+<!-- ====== Add Cloudflare Account Modal ====== -->
+<div class="modal fade" id="addCfModal" tabindex="-1">
     <div class="modal-dialog">
         <form method="POST" action="{{ url_for('account_add') }}">
             <div class="modal-content">
@@ -65,9 +157,11 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">API Token</label>
-                        <input type="password" name="api_token" class="form-control" placeholder="Cloudflare API token" required>
+                        <input type="password" name="api_token" class="form-control" placeholder="Cloudflare API token"
+                            required>
                         <div class="form-text">
-                            Create a token at <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank">Cloudflare Dashboard</a>
+                            Create a token at <a href="https://dash.cloudflare.com/profile/api-tokens"
+                                target="_blank">Cloudflare Dashboard</a>
                             with <strong>Zone:DNS:Edit</strong> and <strong>Zone:Zone:Read</strong> permissions.
                         </div>
                     </div>
@@ -75,6 +169,106 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary">Add Account</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ====== UniFi Connection Modal ====== -->
+<div class="modal fade" id="unifiModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="POST" action="{{ url_for('wan_unifi_settings') }}">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-router me-2"></i>UniFi Controller Connection</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info small mb-3">
+                        <i class="bi bi-info-circle me-1"></i><strong>How to get credentials:</strong>
+                        <ol class="mb-0 mt-1">
+                            <li>Open your UniFi OS console (e.g. <code>https://192.168.1.1</code>)</li>
+                            <li>For best practice, create a dedicated <strong>local-only admin</strong>:
+                                <ul>
+                                    <li><strong>OS Settings</strong> &rarr; <strong>Admins &amp; Users</strong> &rarr;
+                                        <strong>Add Admin</strong> &rarr; <strong>Local Access Only</strong></li>
+                                </ul>
+                            </li>
+                            <li>Use that local username &amp; password below</li>
+                        </ol>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Controller URL</label>
+                        <input type="url" name="url" class="form-control" value="{{ unifi['url'] if unifi else '' }}"
+                            required placeholder="https://192.168.1.1">
+                        <div class="form-text">Your UDM gateway IP with https:// — no trailing slash.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input type="text" name="username" class="form-control"
+                            value="{{ unifi['username'] if unifi else '' }}" required autocomplete="off">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <input type="password" name="password" class="form-control" required autocomplete="off"
+                            placeholder="{% if unifi and unifi['password'] %}(stored){% endif %}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Site Name</label>
+                        <input type="text" name="site_name" class="form-control"
+                            value="{{ unifi['site_name'] if unifi else 'default' }}" placeholder="default">
+                        <div class="form-text">Usually "default" for single-site setups.</div>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="verify_ssl" id="verify_ssl" {% if unifi
+                            and unifi['verify_ssl'] %}checked{% endif %}>
+                        <label class="form-check-label" for="verify_ssl">Verify SSL certificate</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Save &amp; Test
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ====== NPM Connection Modal ====== -->
+<div class="modal fade" id="npmModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="POST" action="{{ url_for('npm_settings_save') }}">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-hdd-network me-2"></i>NPM Connection</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">NPM URL</label>
+                        <input type="url" name="url" class="form-control" placeholder="http://192.168.1.100:81"
+                            value="{{ npm['url'] if npm else '' }}" required>
+                        <div class="form-text">The base URL of your Nginx Proxy Manager (usually port 81).</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Admin Email</label>
+                        <input type="email" name="email" class="form-control" placeholder="admin@example.com"
+                            value="{{ npm['email'] if npm else '' }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <input type="password" name="password" class="form-control" placeholder="NPM admin password"
+                            required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Save &amp; Test
+                    </button>
                 </div>
             </div>
         </form>
