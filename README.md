@@ -1,6 +1,6 @@
 # UpdateIP
 
-A password-protected Flask web app that monitors your public IP address and automatically updates Cloudflare DNS records when it changes. Supports **multi-WAN** setups with **UniFi controller integration** for automatic WAN detection. Also integrates with Nginx Proxy Manager for proxy host management.
+A password-protected Flask web app that monitors your public IP address and automatically updates Cloudflare DNS records when it changes. Supports **multi-WAN** setups with **UniFi controller integration** for automatic WAN detection. Also integrates with **Nginx Proxy Manager** for proxy host management and **mDNS** for easy local network access.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)
 ![Flask](https://img.shields.io/badge/Flask-3.x-green?logo=flask&logoColor=white)
@@ -18,10 +18,12 @@ A password-protected Flask web app that monitors your public IP address and auto
 - **Multiple Accounts** — Manage multiple Cloudflare accounts and zones
 - **Nginx Proxy Manager** — Full CRUD for proxy hosts on a remote NPM instance
 - **Background Scheduler** — Configurable sync intervals for UniFi, Cloudflare, and NPM
-- **Manual & Force Update** — One-click update or force-push to all records
+- **Manual & Force Update** — Check & Update (only when IP changed) or Force Update All (push to all records regardless)
 - **Change History** — Full log of IP changes and DNS update results
 - **Timezone Support** — Configurable timezone for all displayed timestamps
-- **Dark Theme UI** — Clean Bootstrap 5 dark interface with sidebar navigation
+- **mDNS / Bonjour** — Access the app via `updateip.local` on your network (configurable hostname via Avahi)
+- **Mobile Responsive** — Collapsible sidebar navigation for phones and tablets
+- **Dark Theme UI** — Clean Bootstrap 5 dark interface
 - **Password Protected** — bcrypt-hashed passwords, session-based authentication
 
 ## Screenshots
@@ -51,11 +53,12 @@ sudo bash setup.sh
 ```
 
 The setup script will:
-1. Create a Python virtual environment
-2. Install all dependencies
-3. Initialize the SQLite database
-4. Configure a systemd service (port 5000)
-5. Set up Nginx reverse proxy (port 80 → 5000)
+1. Install system dependencies (avahi-daemon for mDNS)
+2. Create a Python virtual environment
+3. Install all dependencies
+4. Initialize the SQLite database
+5. Configure a systemd service (port 5000)
+6. Set up Nginx reverse proxy (port 80 → 5000)
 
 ### Default Login
 
@@ -87,13 +90,17 @@ Go to **DNS Records** → records are grouped by domain. Toggle **Auto-Update** 
 
 ### 4. Monitor
 
-The **Dashboard** shows WAN 1 and WAN 2 IPs with ISP info, all monitored records with status, and recent update activity. The UniFi sync job automatically detects IP changes and updates DNS.
+The **Dashboard** shows each WAN IP with ISP info and last-checked timestamp, all monitored records with status, and recent update activity. Use **Check & Update** to trigger an update only if your IP changed, or **Force Update All** to push current IPs to every auto-update record regardless.
 
-### 5. Configure Timezone
+### 5. mDNS / Local Access
+
+The app is accessible at `updateip.local` on your network by default. To change the hostname, go to **Settings** → **mDNS Hostname**. Works on any device that supports mDNS/Bonjour (iOS, macOS, most Linux, Windows with Bonjour).
+
+### 6. Configure Timezone
 
 Go to **Settings** → **Timezone** to set your display timezone. All timestamps throughout the app will display in your local time.
 
-### 6. Nginx Proxy Manager (Optional)
+### 7. Nginx Proxy Manager (Optional)
 
 Go to **Proxy Manager** → **Connection** → enter your NPM URL (e.g., `http://192.168.1.100:81`), admin email, and password. Then manage all proxy hosts directly from UpdateIP.
 
@@ -118,7 +125,7 @@ templates/          — Jinja2 templates (Bootstrap 5 dark theme)
   npm.html          — NPM proxy host listing
   npm_form.html     — Add/edit proxy host form
   logs.html         — IP change & DNS update history
-  settings.html     — Password, timezone, system info with sync intervals
+  settings.html     — Password, timezone, mDNS hostname, sync intervals
   login.html        — Login page
 ```
 

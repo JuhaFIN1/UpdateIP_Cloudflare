@@ -1,6 +1,8 @@
 import os
 import logging
+import re
 import secrets
+import subprocess
 from datetime import datetime, timezone
 from functools import wraps
 from zoneinfo import ZoneInfo, available_timezones
@@ -29,6 +31,42 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 scheduler = APScheduler()
+
+
+def apply_mdns_hostname(hostname):
+    """Update avahi-daemon config and restart the service."""
+    conf = '/etc/avahi/avahi-daemon.conf'
+    try:
+        with open(conf, 'r') as f:
+            lines = f.readlines()
+        new_lines = []
+        in_server = False
+        host_set = False
+        for line in lines:
+            if line.strip() == '[server]':
+                in_server = True
+                new_lines.append(line)
+                continue
+            if line.strip().startswith('[') and in_server:
+                if not host_set:
+                    new_lines.append(f'host-name={hostname}\n')
+                    host_set = True
+                in_server = False
+            if in_server and line.lstrip().startswith(('host-name=', '#host-name=')):
+                new_lines.append(f'host-name={hostname}\n')
+                host_set = True
+                continue
+            new_lines.append(line)
+        if not host_set:
+            # Fallback: append to end
+            new_lines.append(f'\n[server]\nhost-name={hostname}\n')
+        with open(conf, 'w') as f:
+            f.writelines(new_lines)
+        subprocess.run(['systemctl', 'restart', 'avahi-daemon'],
+                       capture_output=True, timeout=10)
+        logger.info('mDNS hostname set to %s.local', hostname)
+    except Exception as e:
+        logger.error('Failed to apply mDNS hostname: %s', e)
 
 # ---------------------------------------------------------------------------
 # Auth helpers
@@ -263,21 +301,22 @@ def _sync_account(account_id):
 
     zones = list_zones(acc['api_token'])
     for z in zones:
-        db.execute('INSERT OR REPLACE INTO cf_zones (id, account_id, name) VALUES (?, ?, ?)',
+        db.execute('''INSERT INTO cf_zones (id, account_id, name) VALUES (?, ?, ?)
+                      ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id, name=excluded.name''',
                    (z['id'], account_id, z['name']))
 
         # Fetch ALL record types
         dns_records = list_dns_records(acc['api_token'], z['id'], record_type=None)
         for rec in dns_records:
-            existing = db.execute('SELECT auto_update, wan_id FROM cf_records WHERE id = ?',
-                                  (rec['id'],)).fetchone()
-            auto_update = existing['auto_update'] if existing else 0
-            wan_id = existing['wan_id'] if existing else None
-            db.execute('''INSERT OR REPLACE INTO cf_records
-                          (id, zone_id, account_id, name, type, content, proxied, auto_update, wan_id)
-                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            db.execute('''INSERT INTO cf_records
+                          (id, zone_id, account_id, name, type, content, proxied)
+                          VALUES (?, ?, ?, ?, ?, ?, ?)
+                          ON CONFLICT(id) DO UPDATE SET
+                            zone_id=excluded.zone_id, account_id=excluded.account_id,
+                            name=excluded.name, type=excluded.type,
+                            content=excluded.content, proxied=excluded.proxied''',
                        (rec['id'], z['id'], account_id, rec['name'], rec['type'],
-                        rec['content'], 1 if rec.get('proxied') else 0, auto_update, wan_id))
+                        rec['content'], 1 if rec.get('proxied') else 0))
     db.commit()
     db.close()
 
@@ -420,6 +459,17 @@ def settings():
                 db.execute('UPDATE settings SET timezone = ? WHERE id = 1', (tz,))
                 db.commit()
                 flash(f'Timezone set to {tz}', 'success')
+
+        elif action == 'mdns':
+            hostname = request.form.get('mdns_hostname', 'updateip').strip().lower()
+            # Sanitise: allow only a-z, 0-9, hyphens; 1-63 chars
+            if not re.match(r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$', hostname):
+                flash('Invalid hostname. Use lowercase letters, numbers, and hyphens (1-63 chars).', 'danger')
+            else:
+                db.execute('UPDATE settings SET mdns_hostname = ? WHERE id = 1', (hostname,))
+                db.commit()
+                apply_mdns_hostname(hostname)
+                flash(f'mDNS hostname set to {hostname}.local', 'success')
 
         db.close()
         return redirect(url_for('settings'))
@@ -793,6 +843,15 @@ def localtime_filter(value):
 def create_app():
     init_db()
     ensure_admin()
+    # Apply mDNS hostname from settings
+    try:
+        db = get_db()
+        s = db.execute('SELECT mdns_hostname FROM settings WHERE id = 1').fetchone()
+        db.close()
+        if s and s['mdns_hostname']:
+            apply_mdns_hostname(s['mdns_hostname'])
+    except Exception:
+        pass
     scheduler.init_app(app)
     scheduler.start()
     reschedule_job()

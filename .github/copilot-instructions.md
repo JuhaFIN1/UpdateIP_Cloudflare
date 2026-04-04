@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-A password-protected Flask web app that monitors public IP changes across multiple WAN interfaces and auto-updates Cloudflare DNS records. Integrates with **UniFi controllers** for automatic WAN IP/ISP detection and with **Nginx Proxy Manager** for proxy host management.
+A password-protected Flask web app that monitors public IP changes across multiple WAN interfaces and auto-updates Cloudflare DNS records. Integrates with **UniFi controllers** for automatic WAN IP/ISP detection, **Nginx Proxy Manager** for proxy host management, and **Avahi/mDNS** for local network discovery (default: `updateip.local`).
 
 ## Tech Stack
 
@@ -12,7 +12,7 @@ A password-protected Flask web app that monitors public IP changes across multip
 - **Scheduler**: Flask-APScheduler (background sync jobs)
 - **Auth**: bcrypt password hashing, Flask session-based login
 - **APIs**: Cloudflare API v4, UniFi OS API, Nginx Proxy Manager API
-- **Deploy**: systemd service (`updateip.service`) + Nginx reverse proxy (port 80 → 5000)
+- **Deploy**: systemd service (`updateip.service`) + Nginx reverse proxy (port 80 → 5000) + Avahi mDNS
 
 ## Architecture
 
@@ -35,7 +35,7 @@ templates/          — Jinja2 HTML templates (Bootstrap 5 dark theme)
   npm.html          — NPM proxy host listing + connection settings modal
   npm_form.html     — Add/edit proxy host form
   logs.html         — IP change & DNS update history
-  settings.html     — Password, timezone, system info with sync intervals
+  settings.html     — Password, timezone, mDNS hostname, system info with sync intervals
 ```
 
 ## Code Conventions
@@ -52,8 +52,9 @@ templates/          — Jinja2 HTML templates (Bootstrap 5 dark theme)
 
 ### Templates
 - All authenticated pages extend `base.html`.
-- `login.html` is standalone (no sidebar).
+- `base.html` is standalone (no sidebar).
 - Use Bootstrap 5 dark theme (`data-bs-theme="dark"`), Bootstrap Icons for all icons.
+- Sidebar uses `offcanvas-lg` — fixed column on desktop, slide-out menu on mobile with hamburger toggle.
 - Flash messages rendered in `base.html` via `get_flashed_messages(with_categories=true)`.
 - Sidebar highlights active page via `request.endpoint` checks.
 - DNS records grouped by domain with type badges (A=blue, CNAME=cyan, MX=yellow, TXT=gray).
@@ -63,7 +64,8 @@ templates/          — Jinja2 HTML templates (Bootstrap 5 dark theme)
 - Cloudflare IDs are TEXT (Cloudflare returns string UUIDs).
 - Use `INSERT OR REPLACE` for synced Cloudflare data to handle re-sync.
 - All timestamps use SQLite `CURRENT_TIMESTAMP` defaults.
-- Key tables: `settings`, `wan_interfaces` (with isp_name), `unifi_settings`, `cf_records` (with wan_id), `cf_zones`, `cf_accounts`, `ip_log` (with wan_id), `update_log`.
+- Key tables: `settings` (with mdns_hostname), `wan_interfaces` (with isp_name), `unifi_settings`, `cf_records` (with wan_id), `cf_zones`, `cf_accounts`, `ip_log` (with wan_id), `update_log`.
+- Cloudflare sync uses `INSERT ... ON CONFLICT DO UPDATE` (not `INSERT OR REPLACE`) to avoid cascade-deleting records and losing `auto_update`/`wan_id` settings.
 
 ## Build & Deploy
 

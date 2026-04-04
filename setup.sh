@@ -8,6 +8,12 @@ NGINX_CONF="/etc/nginx/sites-available/updateip"
 
 echo "=== UpdateIP Setup ==="
 
+# 0. Install system dependencies
+echo "[0/5] Installing system dependencies..."
+apt-get update -qq
+apt-get install -y -qq avahi-daemon >/dev/null 2>&1
+systemctl enable avahi-daemon >/dev/null 2>&1
+
 # 1. Create virtual environment
 echo "[1/5] Creating Python virtual environment..."
 python3 -m venv "$VENV_DIR"

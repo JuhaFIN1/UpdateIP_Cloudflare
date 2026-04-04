@@ -144,5 +144,9 @@ def init_db():
     cols = [r[1] for r in conn.execute("PRAGMA table_info(settings)").fetchall()]
     if 'timezone' not in cols:
         conn.execute("ALTER TABLE settings ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC'")
+    # Migrate: add mdns_hostname to settings if missing
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(settings)").fetchall()]
+    if 'mdns_hostname' not in cols:
+        conn.execute("ALTER TABLE settings ADD COLUMN mdns_hostname TEXT NOT NULL DEFAULT 'updateip'")
     conn.commit()
     conn.close()
