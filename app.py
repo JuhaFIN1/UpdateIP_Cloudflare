@@ -65,32 +65,80 @@ def ensure_admin():
     db.close()
 
 # ---------------------------------------------------------------------------
-# Scheduler job
+# Scheduler jobs
 # ---------------------------------------------------------------------------
 
-def scheduled_update():
+def scheduled_unifi_sync():
+    """Background job: refresh WAN IPs from UniFi, then check & update DNS."""
     with app.app_context():
+        client = get_unifi_client()
+        if client and client.is_connected():
+            wan_details = client.get_wan_details()
+            if wan_details:
+                db = get_db()
+                for unifi_name, info in wan_details.items():
+                    ip = info.get('ip', '')
+                    isp = info.get('isp_name', '') or info.get('isp_org', '')
+                    existing = db.execute(
+                        'SELECT id FROM wan_interfaces WHERE unifi_wan_name = ?', (unifi_name,)
+                    ).fetchone()
+                    if existing:
+                        db.execute(
+                            'UPDATE wan_interfaces SET current_ip = ?, isp_name = ?, last_checked = CURRENT_TIMESTAMP WHERE id = ?',
+                            (ip, isp, existing['id']))
+                db.commit()
+                db.close()
+                logger.info(f'UniFi sync: updated {len(wan_details)} WAN(s)')
+
+        # After refreshing WAN IPs, check for changes and update DNS
         logger.info('Scheduled IP check running')
         result = check_and_update_ip(force=False)
         logger.info(f'Scheduled update result: {result.get("message", "")}')
 
 
+def scheduled_cloudflare_sync():
+    """Background job: re-sync DNS records from all Cloudflare accounts."""
+    with app.app_context():
+        db = get_db()
+        accounts = db.execute('SELECT id FROM cf_accounts').fetchall()
+        db.close()
+        for acc in accounts:
+            _sync_account(acc['id'])
+        logger.info(f'Cloudflare sync: synced {len(accounts)} account(s)')
+
+
+def scheduled_npm_sync():
+    """Background job: refresh NPM proxy host data."""
+    with app.app_context():
+        client = get_npm_client()
+        if not client or not client.test_connection():
+            return
+        # Just verify connection is alive; NPM data is fetched live on page load
+        logger.info('NPM sync: connection verified')
+
+
 def reschedule_job():
     db = get_db()
-    row = db.execute('SELECT update_interval FROM settings WHERE id = 1').fetchone()
+    row = db.execute('SELECT unifi_interval, cloudflare_interval, npm_interval FROM settings WHERE id = 1').fetchone()
     db.close()
-    interval = row['update_interval'] if row else 300
 
-    if scheduler.get_job('ip_update'):
-        scheduler.remove_job('ip_update')
-    scheduler.add_job(
-        id='ip_update',
-        func=scheduled_update,
-        trigger='interval',
-        seconds=interval,
-        replace_existing=True
-    )
-    logger.info(f'Scheduler set to every {interval}s')
+    jobs = [
+        ('unifi_sync', scheduled_unifi_sync, row['unifi_interval'] if row else 300),
+        ('cloudflare_sync', scheduled_cloudflare_sync, row['cloudflare_interval'] if row else 3600),
+        ('npm_sync', scheduled_npm_sync, row['npm_interval'] if row else 3600),
+    ]
+
+    for job_id, func, interval in jobs:
+        if scheduler.get_job(job_id):
+            scheduler.remove_job(job_id)
+        scheduler.add_job(
+            id=job_id,
+            func=func,
+            trigger='interval',
+            seconds=interval,
+            replace_existing=True
+        )
+        logger.info(f'Scheduler: {job_id} set to every {interval}s')
 
 # ---------------------------------------------------------------------------
 # Routes: Auth
@@ -348,18 +396,20 @@ def settings():
                 db.commit()
                 flash('Password updated', 'success')
 
-        elif action == 'interval':
-            try:
-                interval = int(request.form.get('update_interval', 300))
-                if interval < 60:
-                    interval = 60
-                if interval > 86400:
-                    interval = 86400
-            except ValueError:
-                interval = 300
-            db.execute('UPDATE settings SET update_interval = ? WHERE id = 1', (interval,))
+        elif action == 'sync_intervals':
+            def _clamp(val, lo=60, hi=86400, default=300):
+                try:
+                    v = int(val)
+                    return max(lo, min(hi, v))
+                except (ValueError, TypeError):
+                    return default
+            unifi_int = _clamp(request.form.get('unifi_interval'), default=300)
+            cf_int = _clamp(request.form.get('cloudflare_interval'), default=3600)
+            npm_int = _clamp(request.form.get('npm_interval'), default=3600)
+            db.execute('UPDATE settings SET unifi_interval = ?, cloudflare_interval = ?, npm_interval = ? WHERE id = 1',
+                       (unifi_int, cf_int, npm_int))
             db.commit()
-            flash(f'Update interval set to {interval} seconds', 'success')
+            flash('Sync intervals updated', 'success')
             reschedule_job()
 
         elif action == 'timezone':

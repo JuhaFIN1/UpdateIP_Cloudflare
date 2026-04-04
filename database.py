@@ -24,6 +24,9 @@ def init_db():
         CREATE TABLE IF NOT EXISTS settings (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             update_interval INTEGER NOT NULL DEFAULT 300,
+            unifi_interval INTEGER NOT NULL DEFAULT 300,
+            cloudflare_interval INTEGER NOT NULL DEFAULT 3600,
+            npm_interval INTEGER NOT NULL DEFAULT 3600,
             current_ip TEXT DEFAULT '',
             timezone TEXT NOT NULL DEFAULT 'UTC'
         );
@@ -127,7 +130,16 @@ def init_db():
     # Ensure settings row exists
     row = conn.execute('SELECT id FROM settings WHERE id = 1').fetchone()
     if not row:
-        conn.execute('INSERT INTO settings (id, update_interval, current_ip, timezone) VALUES (1, 300, "", "UTC")')
+        conn.execute('INSERT INTO settings (id, update_interval, unifi_interval, cloudflare_interval, npm_interval, current_ip, timezone) '
+                     'VALUES (1, 300, 300, 3600, 3600, "", "UTC")')
+    # Migrate: add sync interval columns to settings if missing
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(settings)").fetchall()]
+    if 'unifi_interval' not in cols:
+        conn.execute("ALTER TABLE settings ADD COLUMN unifi_interval INTEGER NOT NULL DEFAULT 300")
+    if 'cloudflare_interval' not in cols:
+        conn.execute("ALTER TABLE settings ADD COLUMN cloudflare_interval INTEGER NOT NULL DEFAULT 3600")
+    if 'npm_interval' not in cols:
+        conn.execute("ALTER TABLE settings ADD COLUMN npm_interval INTEGER NOT NULL DEFAULT 3600")
     # Migrate: add timezone to settings if missing
     cols = [r[1] for r in conn.execute("PRAGMA table_info(settings)").fetchall()]
     if 'timezone' not in cols:

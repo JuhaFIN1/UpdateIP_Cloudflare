@@ -13,17 +13,21 @@
     </div>
 </div>
 
-<!-- IP info card -->
+<!-- WAN IPs + stats -->
 <div class="row mb-4">
-    <div class="col-md-4">
+    {% for w in wans %}
+    <div class="col-md-4 mb-2">
         <div class="card bg-primary bg-opacity-10 border-primary">
             <div class="card-body text-center">
-                <div class="text-muted mb-1">Current Public IP</div>
-                <h3 class="mb-0" id="current-ip">{{ settings['current_ip'] or 'Not detected yet' }}</h3>
+                <div class="text-muted mb-1">{{ w['name'] }}
+                    {% if w['isp_name'] %}<small class="text-secondary">· {{ w['isp_name'] }}</small>{% endif %}
+                </div>
+                <h3 class="mb-0"><code>{{ w['current_ip'] or 'Not detected' }}</code></h3>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    {% endfor %}
+    <div class="col-md-4 mb-2">
         <div class="card bg-success bg-opacity-10 border-success">
             <div class="card-body text-center">
                 <div class="text-muted mb-1">Monitored Records</div>
@@ -31,37 +35,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card bg-info bg-opacity-10 border-info">
-            <div class="card-body text-center">
-                <div class="text-muted mb-1">Update Interval</div>
-                <h3 class="mb-0">{{ settings['update_interval'] }}s</h3>
-            </div>
-        </div>
-    </div>
 </div>
-
-<!-- WAN IPs -->
-{% if wans %}
-<div class="row mb-4">
-    {% for w in wans %}
-    <div class="col-md-3 mb-2">
-        <div class="card border-secondary">
-            <div class="card-body text-center py-2">
-                <div class="text-muted small">{{ w['name'] }}
-                    {% if w['detect_method'] == 'unifi' %}
-                    <span class="badge bg-info ms-1">UniFi</span>
-                    {% elif w['detect_method'] == 'static' %}
-                    <span class="badge bg-warning text-dark ms-1">Static</span>
-                    {% endif %}
-                </div>
-                <h5 class="mb-0"><code>{{ w['current_ip'] or '—' }}</code></h5>
-            </div>
-        </div>
-    </div>
-    {% endfor %}
-</div>
-{% endif %}
 
 <!-- Monitored records table -->
 <div class="card mb-4">

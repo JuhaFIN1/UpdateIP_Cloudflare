@@ -17,7 +17,7 @@ A password-protected Flask web app that monitors your public IP address and auto
 - **Per-Domain Grouping** — DNS records organized by domain with clear section headers
 - **Multiple Accounts** — Manage multiple Cloudflare accounts and zones
 - **Nginx Proxy Manager** — Full CRUD for proxy hosts on a remote NPM instance
-- **Background Scheduler** — Configurable interval (1 min – 24 hours, default 5 min)
+- **Background Scheduler** — Configurable sync intervals for UniFi, Cloudflare, and NPM
 - **Manual & Force Update** — One-click update or force-push to all records
 - **Change History** — Full log of IP changes and DNS update results
 - **Timezone Support** — Configurable timezone for all displayed timestamps
@@ -87,7 +87,7 @@ Go to **DNS Records** → records are grouped by domain. Toggle **Auto-Update** 
 
 ### 4. Monitor
 
-The **Dashboard** shows your current IP per WAN, all monitored records with status, and recent update activity. The background scheduler checks for IP changes automatically.
+The **Dashboard** shows WAN 1 and WAN 2 IPs with ISP info, all monitored records with status, and recent update activity. The UniFi sync job automatically detects IP changes and updates DNS.
 
 ### 5. Configure Timezone
 
@@ -118,7 +118,7 @@ templates/          — Jinja2 templates (Bootstrap 5 dark theme)
   npm.html          — NPM proxy host listing
   npm_form.html     — Add/edit proxy host form
   logs.html         — IP change & DNS update history
-  settings.html     — Password, update interval, timezone
+  settings.html     — Password, timezone, system info with sync intervals
   login.html        — Login page
 ```
 
