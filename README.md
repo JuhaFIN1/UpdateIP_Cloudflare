@@ -24,6 +24,8 @@ A password-protected Flask web app that monitors your public IP address and auto
 - **mDNS / Bonjour** — Access the app via `updateip.local` on your network (configurable hostname via Avahi)
 - **Mobile Responsive** — Collapsible sidebar navigation for phones and tablets
 - **Backup & Restore** — Download full system backup as JSON; upload and selectively restore with preview comparison
+- **App Updates** — Automatic daily check for GitHub updates with dashboard notification; one-click install with live progress
+- **System Updates** — Run Debian apt update & upgrade directly from the Settings page with live terminal output
 - **Dark Theme UI** — Clean Bootstrap 5 dark interface
 - **Password Protected** — bcrypt-hashed passwords, session-based authentication
 
@@ -129,7 +131,7 @@ templates/          — Jinja2 templates (Bootstrap 5 dark theme)
   npm.html          — NPM proxy host listing
   npm_form.html     — Add/edit proxy host form
   logs.html         — IP change & DNS update history
-  settings.html     — Password, timezone, mDNS hostname, sync intervals, backup/restore
+  settings.html     — Password, timezone, mDNS hostname, updates, sync intervals, backup/restore
   restore.html      — Restore preview with comparison
   login.html        — Login page
 ```

@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo, available_timezones
 
 import bcrypt
 from flask import (Flask, render_template, request, redirect, url_for,
-                   flash, session, jsonify)
+                   flash, session, jsonify, Response, stream_with_context)
 from flask_apscheduler import APScheduler
 
 from database import get_db, init_db, DB_PATH
@@ -31,6 +31,9 @@ from config import APP_VERSION
 # App setup
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
+
+# Cached result of the last GitHub update check (set by scheduled job)
+_update_info = {'available': False, 'behind': 0, 'changes': '', 'checked_at': None}
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 app.config['SCHEDULER_API_ENABLED'] = False
 app.config['APP_VERSION'] = APP_VERSION
@@ -164,6 +167,40 @@ def scheduled_npm_sync():
         logger.info('NPM sync: connection verified')
 
 
+def scheduled_update_check():
+    """Background job: check GitHub for app updates once every 24h."""
+    global _update_info
+    try:
+        app_dir = os.path.abspath(os.path.dirname(__file__))
+        subprocess.run(['git', 'fetch', 'origin', 'main'], cwd=app_dir,
+                       capture_output=True, timeout=30)
+        result = subprocess.run(
+            ['git', 'rev-list', '--left-right', '--count', 'main...origin/main'],
+            cwd=app_dir, capture_output=True, text=True, timeout=10)
+        if result.returncode != 0:
+            return
+        parts = result.stdout.strip().split('\t')
+        behind = int(parts[1]) if len(parts) == 2 else 0
+        changes = ''
+        if behind > 0:
+            log_result = subprocess.run(
+                ['git', 'log', '--oneline', 'main..origin/main'],
+                cwd=app_dir, capture_output=True, text=True, timeout=10)
+            changes = log_result.stdout.strip()
+        _update_info = {
+            'available': behind > 0,
+            'behind': behind,
+            'changes': changes,
+            'checked_at': datetime.now(timezone.utc).isoformat()
+        }
+        if behind > 0:
+            logger.info(f'Update check: {behind} new commit(s) available')
+        else:
+            logger.info('Update check: already up to date')
+    except Exception as e:
+        logger.warning(f'Update check failed: {e}')
+
+
 def reschedule_job():
     db = get_db()
     row = db.execute('SELECT unifi_interval, cloudflare_interval, npm_interval FROM settings WHERE id = 1').fetchone()
@@ -186,6 +223,23 @@ def reschedule_job():
             replace_existing=True
         )
         logger.info(f'Scheduler: {job_id} set to every {interval}s')
+
+    # 24h GitHub update check
+    if not scheduler.get_job('update_check'):
+        scheduler.add_job(
+            id='update_check',
+            func=scheduled_update_check,
+            trigger='interval',
+            seconds=86400,
+            replace_existing=True
+        )
+        # Also run immediately on startup (non-blocking)
+        scheduler.add_job(
+            id='update_check_initial',
+            func=scheduled_update_check,
+            trigger='date',
+        )
+        logger.info('Scheduler: update_check set to every 24h')
 
 # ---------------------------------------------------------------------------
 # Routes: Auth
@@ -233,14 +287,15 @@ def dashboard():
         ORDER BY a.name, z.name, r.name
     ''').fetchall()
     recent_logs = db.execute(
-        'SELECT * FROM update_log ORDER BY updated_at DESC LIMIT 20'
+        'SELECT * FROM update_log ORDER BY updated_at DESC LIMIT 10'
     ).fetchall()
     db.close()
     return render_template('dashboard.html',
                            settings=settings,
                            wans=wans,
                            records=records,
-                           recent_logs=recent_logs)
+                           recent_logs=recent_logs,
+                           update_info=_update_info)
 
 # ---------------------------------------------------------------------------
 # Routes: Accounts
@@ -623,6 +678,139 @@ def settings():
     db.close()
     timezones = sorted(available_timezones())
     return render_template('settings.html', settings=s, wans=wans, timezones=timezones)
+
+
+# ---------------------------------------------------------------------------
+# Routes: Updates
+# ---------------------------------------------------------------------------
+
+APP_DIR = os.path.abspath(os.path.dirname(__file__))
+VENV_PIP = os.path.join(APP_DIR, 'venv', 'bin', 'pip')
+
+
+@app.route('/settings/check-update')
+@login_required
+def check_app_update():
+    """Check if GitHub main branch has newer commits than local main."""
+    try:
+        # Fetch latest from origin without merging
+        subprocess.run(['git', 'fetch', 'origin', 'main'], cwd=APP_DIR,
+                       capture_output=True, timeout=30)
+        # Count commits ahead/behind
+        result = subprocess.run(
+            ['git', 'rev-list', '--left-right', '--count', 'main...origin/main'],
+            cwd=APP_DIR, capture_output=True, text=True, timeout=10)
+        if result.returncode != 0:
+            return jsonify({'available': False, 'error': 'Could not check updates'})
+        parts = result.stdout.strip().split('\t')
+        behind = int(parts[1]) if len(parts) == 2 else 0
+        # Get log of new commits
+        changes = ''
+        if behind > 0:
+            log_result = subprocess.run(
+                ['git', 'log', '--oneline', 'main..origin/main'],
+                cwd=APP_DIR, capture_output=True, text=True, timeout=10)
+            changes = log_result.stdout.strip()
+        return jsonify({
+            'available': behind > 0,
+            'behind': behind,
+            'changes': changes,
+            'current_version': APP_VERSION
+        })
+    except Exception as e:
+        return jsonify({'available': False, 'error': str(e)})
+
+
+@app.route('/settings/update-app')
+@login_required
+def update_app():
+    """Pull latest from GitHub main, install deps, and restart the service."""
+    def generate():
+        yield 'data: Switching to main branch...\n\n'
+        r = subprocess.run(['git', 'checkout', 'main'], cwd=APP_DIR,
+                           capture_output=True, text=True, timeout=15)
+        yield f'data: {r.stdout.strip()}\n\n'
+        if r.returncode != 0:
+            yield f'data: ERROR: {r.stderr.strip()}\n\n'
+            yield 'data: [DONE]\n\n'
+            return
+
+        yield 'data: Pulling latest changes from GitHub...\n\n'
+        r = subprocess.run(['git', 'pull', 'origin', 'main'], cwd=APP_DIR,
+                           capture_output=True, text=True, timeout=60)
+        for line in (r.stdout + r.stderr).strip().splitlines():
+            yield f'data: {line}\n\n'
+        if r.returncode != 0:
+            yield 'data: ERROR: Git pull failed\n\n'
+            yield 'data: [DONE]\n\n'
+            return
+
+        yield 'data: Installing dependencies...\n\n'
+        r = subprocess.run([VENV_PIP, 'install', '-r',
+                           os.path.join(APP_DIR, 'requirements.txt')],
+                           capture_output=True, text=True, timeout=120)
+        for line in r.stdout.strip().splitlines():
+            yield f'data: {line}\n\n'
+        if r.returncode != 0:
+            for line in r.stderr.strip().splitlines():
+                yield f'data: ERROR: {line}\n\n'
+
+        yield 'data: Switching back to dev branch...\n\n'
+        subprocess.run(['git', 'checkout', 'dev'], cwd=APP_DIR,
+                       capture_output=True, text=True, timeout=15)
+
+        yield 'data: Restarting UpdateIP service...\n\n'
+        subprocess.Popen(['systemctl', 'restart', 'updateip'],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        yield 'data: Update complete! Page will reload shortly.\n\n'
+        yield 'data: [DONE]\n\n'
+
+    return Response(stream_with_context(generate()),
+                    mimetype='text/event-stream',
+                    headers={'Cache-Control': 'no-cache',
+                             'X-Accel-Buffering': 'no'})
+
+
+@app.route('/settings/system-update')
+@login_required
+def system_update():
+    """Run apt update && apt upgrade -y and stream output."""
+    def generate():
+        yield 'data: Running apt update...\n\n'
+        proc = subprocess.Popen(
+            ['apt-get', 'update'],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1)
+        for line in proc.stdout:
+            yield f'data: {line.rstrip()}\n\n'
+        proc.wait()
+        if proc.returncode != 0:
+            yield f'data: apt update failed (exit {proc.returncode})\n\n'
+            yield 'data: [DONE]\n\n'
+            return
+
+        yield 'data: \n\n'
+        yield 'data: Running apt upgrade -y...\n\n'
+        env = os.environ.copy()
+        env['DEBIAN_FRONTEND'] = 'noninteractive'
+        proc = subprocess.Popen(
+            ['apt-get', 'upgrade', '-y'],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1, env=env)
+        for line in proc.stdout:
+            yield f'data: {line.rstrip()}\n\n'
+        proc.wait()
+        if proc.returncode == 0:
+            yield 'data: \n\n'
+            yield 'data: System update completed successfully.\n\n'
+        else:
+            yield f'data: apt upgrade failed (exit {proc.returncode})\n\n'
+        yield 'data: [DONE]\n\n'
+
+    return Response(stream_with_context(generate()),
+                    mimetype='text/event-stream',
+                    headers={'Cache-Control': 'no-cache',
+                             'X-Accel-Buffering': 'no'})
 
 
 # ---------------------------------------------------------------------------
@@ -1349,6 +1537,33 @@ def wan_unifi_sync():
 # ---------------------------------------------------------------------------
 # Jinja filters
 # ---------------------------------------------------------------------------
+
+@app.template_filter('timeago')
+def timeago_filter(value):
+    """Convert a UTC timestamp to a relative 'x minutes ago' string."""
+    if not value:
+        return '—'
+    try:
+        if isinstance(value, str):
+            dt = datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
+        else:
+            dt = value.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        diff = now - dt
+        seconds = int(diff.total_seconds())
+        if seconds < 60:
+            return 'just now'
+        minutes = seconds // 60
+        if minutes < 60:
+            return f'{minutes}m ago'
+        hours = minutes // 60
+        if hours < 24:
+            return f'{hours}h ago'
+        days = hours // 24
+        return f'{days}d ago'
+    except Exception:
+        return str(value)
+
 
 @app.template_filter('localtime')
 def localtime_filter(value):
