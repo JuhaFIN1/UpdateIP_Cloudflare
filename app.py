@@ -3,6 +3,7 @@ import logging
 import secrets
 from datetime import datetime, timezone
 from functools import wraps
+from zoneinfo import ZoneInfo, available_timezones
 
 import bcrypt
 from flask import (Flask, render_template, request, redirect, url_for,
@@ -14,6 +15,7 @@ from cloudflare_api import (verify_token, list_zones, list_dns_records,
                             get_public_ip)
 from updater import check_and_update_ip
 from npm_api import get_npm_client, NpmClient
+from unifi_api import get_unifi_client, clear_cached_client, UnifiClient
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -124,11 +126,14 @@ def logout():
 def dashboard():
     db = get_db()
     settings = db.execute('SELECT current_ip, update_interval FROM settings WHERE id = 1').fetchone()
+    wans = db.execute('SELECT * FROM wan_interfaces ORDER BY name').fetchall()
     records = db.execute('''
-        SELECT r.*, z.name as zone_name, a.name as account_name
+        SELECT r.*, z.name as zone_name, a.name as account_name,
+               w.name as wan_name
         FROM cf_records r
         JOIN cf_zones z ON r.zone_id = z.id
         JOIN cf_accounts a ON r.account_id = a.id
+        LEFT JOIN wan_interfaces w ON r.wan_id = w.id
         WHERE r.auto_update = 1
         ORDER BY a.name, z.name, r.name
     ''').fetchall()
@@ -138,6 +143,7 @@ def dashboard():
     db.close()
     return render_template('dashboard.html',
                            settings=settings,
+                           wans=wans,
                            records=records,
                            recent_logs=recent_logs)
 
@@ -212,16 +218,18 @@ def _sync_account(account_id):
         db.execute('INSERT OR REPLACE INTO cf_zones (id, account_id, name) VALUES (?, ?, ?)',
                    (z['id'], account_id, z['name']))
 
-        dns_records = list_dns_records(acc['api_token'], z['id'])
+        # Fetch ALL record types
+        dns_records = list_dns_records(acc['api_token'], z['id'], record_type=None)
         for rec in dns_records:
-            existing = db.execute('SELECT auto_update FROM cf_records WHERE id = ?',
+            existing = db.execute('SELECT auto_update, wan_id FROM cf_records WHERE id = ?',
                                   (rec['id'],)).fetchone()
             auto_update = existing['auto_update'] if existing else 0
+            wan_id = existing['wan_id'] if existing else None
             db.execute('''INSERT OR REPLACE INTO cf_records
-                          (id, zone_id, account_id, name, type, content, proxied, auto_update)
-                          VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                          (id, zone_id, account_id, name, type, content, proxied, auto_update, wan_id)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                        (rec['id'], z['id'], account_id, rec['name'], rec['type'],
-                        rec['content'], 1 if rec.get('proxied') else 0, auto_update))
+                        rec['content'], 1 if rec.get('proxied') else 0, auto_update, wan_id))
     db.commit()
     db.close()
 
@@ -234,15 +242,26 @@ def _sync_account(account_id):
 def records():
     db = get_db()
     accs = db.execute('SELECT * FROM cf_accounts ORDER BY name').fetchall()
+    wans = db.execute('SELECT * FROM wan_interfaces ORDER BY name').fetchall()
     recs = db.execute('''
-        SELECT r.*, z.name as zone_name, a.name as account_name
+        SELECT r.*, z.name as zone_name, a.name as account_name,
+               w.name as wan_name
         FROM cf_records r
         JOIN cf_zones z ON r.zone_id = z.id
         JOIN cf_accounts a ON r.account_id = a.id
-        ORDER BY a.name, z.name, r.name
+        LEFT JOIN wan_interfaces w ON r.wan_id = w.id
+        ORDER BY z.name, r.type, r.name
     ''').fetchall()
+    # Group records by zone_name
+    from collections import OrderedDict
+    zones = OrderedDict()
+    for r in recs:
+        zn = r['zone_name']
+        if zn not in zones:
+            zones[zn] = []
+        zones[zn].append(r)
     db.close()
-    return render_template('records.html', records=recs, accounts=accs)
+    return render_template('records.html', zones=zones, accounts=accs, wans=wans)
 
 
 @app.route('/records/toggle', methods=['POST'])
@@ -250,8 +269,11 @@ def records():
 def record_toggle():
     record_id = request.form.get('record_id', '')
     auto_update = 1 if request.form.get('auto_update') == '1' else 0
+    wan_id = request.form.get('wan_id', '')
+    wan_id_val = int(wan_id) if wan_id and wan_id != '0' else None
     db = get_db()
-    db.execute('UPDATE cf_records SET auto_update = ? WHERE id = ?', (auto_update, record_id))
+    db.execute('UPDATE cf_records SET auto_update = ?, wan_id = ? WHERE id = ?',
+               (auto_update, wan_id_val, record_id))
     db.commit()
     db.close()
     return redirect(url_for('records'))
@@ -289,7 +311,11 @@ def force_update():
 @login_required
 def logs():
     db = get_db()
-    ip_logs = db.execute('SELECT * FROM ip_log ORDER BY changed_at DESC LIMIT 100').fetchall()
+    ip_logs = db.execute(
+        'SELECT l.*, w.name AS wan_name FROM ip_log l '
+        'LEFT JOIN wan_interfaces w ON l.wan_id = w.id '
+        'ORDER BY l.changed_at DESC LIMIT 100'
+    ).fetchall()
     update_logs = db.execute('SELECT * FROM update_log ORDER BY updated_at DESC LIMIT 200').fetchall()
     db.close()
     return render_template('logs.html', ip_logs=ip_logs, update_logs=update_logs)
@@ -336,12 +362,23 @@ def settings():
             flash(f'Update interval set to {interval} seconds', 'success')
             reschedule_job()
 
+        elif action == 'timezone':
+            tz = request.form.get('timezone', 'UTC').strip()
+            if tz not in available_timezones() and tz != 'UTC':
+                flash('Invalid timezone selected', 'danger')
+            else:
+                db.execute('UPDATE settings SET timezone = ? WHERE id = 1', (tz,))
+                db.commit()
+                flash(f'Timezone set to {tz}', 'success')
+
         db.close()
         return redirect(url_for('settings'))
 
     s = db.execute('SELECT * FROM settings WHERE id = 1').fetchone()
+    wans = db.execute('SELECT * FROM wan_interfaces ORDER BY name').fetchall()
     db.close()
-    return render_template('settings.html', settings=s)
+    timezones = sorted(available_timezones())
+    return render_template('settings.html', settings=s, wans=wans, timezones=timezones)
 
 
 # ---------------------------------------------------------------------------
@@ -488,18 +525,215 @@ def _build_proxy_host_data(form):
 def api_status():
     db = get_db()
     settings = db.execute('SELECT current_ip, update_interval FROM settings WHERE id = 1').fetchone()
+    wans = db.execute('SELECT id, name, current_ip, detect_method FROM wan_interfaces ORDER BY name').fetchall()
     records = db.execute('''
-        SELECT r.name, r.content, r.last_status, r.last_updated, z.name as zone_name
+        SELECT r.name, r.content, r.last_status, r.last_updated,
+               z.name as zone_name, w.name as wan_name
         FROM cf_records r
         JOIN cf_zones z ON r.zone_id = z.id
+        LEFT JOIN wan_interfaces w ON r.wan_id = w.id
         WHERE r.auto_update = 1
     ''').fetchall()
     db.close()
     return jsonify({
         'ip': settings['current_ip'] if settings else '',
         'interval': settings['update_interval'] if settings else 300,
+        'wans': [dict(w) for w in wans],
         'records': [dict(r) for r in records]
     })
+
+
+# ---------------------------------------------------------------------------
+# Routes: WAN Interfaces
+# ---------------------------------------------------------------------------
+
+@app.route('/wan')
+@login_required
+def wan_list():
+    db = get_db()
+    unifi = db.execute('SELECT * FROM unifi_settings WHERE id = 1').fetchone()
+    # Check UniFi connection & get live WAN details (reuses cached session)
+    unifi_connected = False
+    unifi_wans = {}  # {name: {ip, isp_name, isp_org, status, ...}}
+    client = get_unifi_client()
+    if client:
+        unifi_connected = client.is_connected()
+        if unifi_connected:
+            unifi_wans = client.get_wan_details()
+            # Auto-sync: create/update WAN interfaces from UniFi
+            for unifi_name, info in unifi_wans.items():
+                ip = info.get('ip', '')
+                isp = info.get('isp_name', '') or info.get('isp_org', '')
+                display_name = f"{unifi_name} ({isp})" if isp else unifi_name
+                existing = db.execute(
+                    'SELECT id, name FROM wan_interfaces WHERE unifi_wan_name = ?', (unifi_name,)
+                ).fetchone()
+                if not existing:
+                    db.execute(
+                        'INSERT INTO wan_interfaces (name, detect_method, unifi_wan_name, current_ip, isp_name) '
+                        'VALUES (?, ?, ?, ?, ?)',
+                        (display_name, 'unifi', unifi_name, ip, isp))
+                else:
+                    db.execute(
+                        'UPDATE wan_interfaces SET current_ip = ?, isp_name = ?, last_checked = CURRENT_TIMESTAMP WHERE id = ?',
+                        (ip, isp, existing['id']))
+            db.commit()
+    wans = db.execute('SELECT * FROM wan_interfaces ORDER BY name').fetchall()
+    db.close()
+    return render_template('wan.html', wans=wans, unifi=unifi,
+                           unifi_connected=unifi_connected,
+                           unifi_wans=unifi_wans)
+
+
+@app.route('/wan/add', methods=['POST'])
+@login_required
+def wan_add():
+    name = request.form.get('name', '').strip()
+    detect_method = request.form.get('detect_method', 'auto')
+    static_ip = request.form.get('static_ip', '').strip()
+    unifi_wan_name = request.form.get('unifi_wan_name', '').strip()
+    if not name:
+        flash('WAN name is required', 'danger')
+        return redirect(url_for('wan_list'))
+    if detect_method not in ('auto', 'static', 'unifi'):
+        detect_method = 'auto'
+    db = get_db()
+    db.execute(
+        'INSERT INTO wan_interfaces (name, detect_method, static_ip, unifi_wan_name) VALUES (?, ?, ?, ?)',
+        (name, detect_method, static_ip, unifi_wan_name))
+    db.commit()
+    db.close()
+    flash(f'WAN "{name}" added', 'success')
+    return redirect(url_for('wan_list'))
+
+
+@app.route('/wan/<int:wan_id>/edit', methods=['POST'])
+@login_required
+def wan_edit(wan_id):
+    name = request.form.get('name', '').strip()
+    detect_method = request.form.get('detect_method', 'auto')
+    static_ip = request.form.get('static_ip', '').strip()
+    unifi_wan_name = request.form.get('unifi_wan_name', '').strip()
+    if not name:
+        flash('WAN name is required', 'danger')
+        return redirect(url_for('wan_list'))
+    if detect_method not in ('auto', 'static', 'unifi'):
+        detect_method = 'auto'
+    db = get_db()
+    db.execute(
+        'UPDATE wan_interfaces SET name = ?, detect_method = ?, static_ip = ?, unifi_wan_name = ? WHERE id = ?',
+        (name, detect_method, static_ip, unifi_wan_name, wan_id))
+    db.commit()
+    db.close()
+    flash(f'WAN "{name}" updated', 'success')
+    return redirect(url_for('wan_list'))
+
+
+@app.route('/wan/<int:wan_id>/delete', methods=['POST'])
+@login_required
+def wan_delete(wan_id):
+    db = get_db()
+    db.execute('UPDATE cf_records SET wan_id = NULL WHERE wan_id = ?', (wan_id,))
+    db.execute('DELETE FROM wan_interfaces WHERE id = ?', (wan_id,))
+    db.commit()
+    db.close()
+    flash('WAN interface deleted', 'success')
+    return redirect(url_for('wan_list'))
+
+
+@app.route('/wan/unifi-settings', methods=['POST'])
+@login_required
+def wan_unifi_settings():
+    url = request.form.get('url', '').strip().rstrip('/')
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '')
+    site_name = request.form.get('site_name', 'default').strip() or 'default'
+    verify_ssl = 1 if request.form.get('verify_ssl') == 'on' else 0
+    if not url or not username or not password:
+        flash('All UniFi connection fields are required', 'danger')
+        return redirect(url_for('wan_list'))
+    # Clear cached client since credentials are changing
+    clear_cached_client()
+    client = UnifiClient(url, username, password, site=site_name, verify_ssl=bool(verify_ssl))
+    if not client.test_connection():
+        flash('Could not connect to UniFi controller. Check URL and credentials.', 'danger')
+        return redirect(url_for('wan_list'))
+    db = get_db()
+    db.execute(
+        'UPDATE unifi_settings SET url = ?, username = ?, password = ?, site_name = ?, verify_ssl = ? WHERE id = 1',
+        (url, username, password, site_name, verify_ssl))
+    db.commit()
+    db.close()
+    # Force new cached client with the saved credentials
+    clear_cached_client()
+    flash('UniFi connection saved and verified', 'success')
+    return redirect(url_for('wan_list'))
+
+
+@app.route('/wan/unifi-sync', methods=['POST'])
+@login_required
+def wan_unifi_sync():
+    """Force re-sync WAN interfaces from UniFi controller."""
+    client = get_unifi_client()
+    if not client:
+        flash('Configure UniFi connection first', 'danger')
+        return redirect(url_for('wan_list'))
+    if not client.is_connected():
+        flash('Could not connect to UniFi controller', 'danger')
+        return redirect(url_for('wan_list'))
+    wan_details = client.get_wan_details()
+    if not wan_details:
+        flash('No WAN interfaces found on UniFi controller', 'warning')
+        return redirect(url_for('wan_list'))
+    db = get_db()
+    created = 0
+    for unifi_name, info in wan_details.items():
+        ip = info.get('ip', '')
+        isp = info.get('isp_name', '') or info.get('isp_org', '')
+        display_name = f"{unifi_name} ({isp})" if isp else unifi_name
+        existing = db.execute(
+            'SELECT id FROM wan_interfaces WHERE unifi_wan_name = ?', (unifi_name,)
+        ).fetchone()
+        if not existing:
+            db.execute(
+                'INSERT INTO wan_interfaces (name, detect_method, unifi_wan_name, current_ip, isp_name) '
+                'VALUES (?, ?, ?, ?, ?)',
+                (display_name, 'unifi', unifi_name, ip, isp))
+            created += 1
+        else:
+            db.execute(
+                'UPDATE wan_interfaces SET current_ip = ?, isp_name = ?, last_checked = CURRENT_TIMESTAMP WHERE id = ?',
+                (ip, isp, existing['id']))
+    db.commit()
+    db.close()
+    flash(f'Synced {len(wan_details)} WAN(s) from UniFi. {created} new interface(s) created.', 'success')
+    return redirect(url_for('wan_list'))
+
+
+# ---------------------------------------------------------------------------
+# Jinja filters
+# ---------------------------------------------------------------------------
+
+@app.template_filter('localtime')
+def localtime_filter(value):
+    """Convert a UTC timestamp string to the configured timezone."""
+    if not value:
+        return ''
+    try:
+        db = get_db()
+        tz_name = db.execute('SELECT timezone FROM settings WHERE id = 1').fetchone()['timezone']
+        db.close()
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo('UTC')
+    try:
+        if isinstance(value, str):
+            dt = datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
+        else:
+            dt = value.replace(tzinfo=timezone.utc)
+        return dt.astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
+    except Exception:
+        return str(value)
 
 
 # ---------------------------------------------------------------------------

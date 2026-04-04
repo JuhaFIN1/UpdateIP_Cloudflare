@@ -13,12 +13,19 @@
         <div class="table-responsive">
             <table class="table table-sm table-hover mb-0">
                 <thead>
-                    <tr><th>Time</th><th>Old IP</th><th>New IP</th></tr>
+                    <tr><th>Time</th><th>WAN</th><th>Old IP</th><th>New IP</th></tr>
                 </thead>
                 <tbody>
                 {% for l in ip_logs %}
                 <tr>
-                    <td class="text-nowrap">{{ l['changed_at'] }}</td>
+                    <td class="text-nowrap">{{ l['changed_at']|localtime }}</td>
+                    <td>
+                        {% if l['wan_name'] %}
+                        <span class="badge bg-info">{{ l['wan_name'] }}</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
                     <td><code>{{ l['old_ip'] or '—' }}</code></td>
                     <td><code>{{ l['new_ip'] }}</code></td>
                 </tr>
@@ -47,7 +54,7 @@
                 <tbody>
                 {% for l in update_logs %}
                 <tr>
-                    <td class="text-nowrap">{{ l['updated_at'] }}</td>
+                    <td class="text-nowrap">{{ l['updated_at']|localtime }}</td>
                     <td><code>{{ l['record_name'] }}</code></td>
                     <td>{{ l['zone_name'] }}</td>
                     <td><code>{{ l['old_ip'] }}</code></td>

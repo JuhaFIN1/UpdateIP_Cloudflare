@@ -57,6 +57,34 @@
             </div>
         </div>
     </div>
+
+    <!-- Timezone -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-clock me-1"></i>Timezone
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="timezone">
+                    <div class="mb-3">
+                        <label class="form-label">Display Timezone</label>
+                        <select name="timezone" class="form-select" id="timezoneSelect">
+                            {% for tz in timezones %}
+                            <option value="{{ tz }}" {% if tz == settings['timezone'] %}selected{% endif %}>{{ tz }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">
+                            All timestamps in the app will be displayed in this timezone.
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Save Timezone
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Current info -->
@@ -68,7 +96,39 @@
         <table class="table table-sm mb-0">
             <tr><td class="fw-bold" style="width:200px">Current IP</td><td><code>{{ settings['current_ip'] or 'Not detected' }}</code></td></tr>
             <tr><td class="fw-bold">Update Interval</td><td>{{ settings['update_interval'] }} seconds</td></tr>
+            <tr><td class="fw-bold">Timezone</td><td>{{ settings['timezone'] }}</td></tr>
+            {% for w in wans %}
+            <tr>
+                <td class="fw-bold">{{ w['name'] }}
+                    {% if w['detect_method'] == 'unifi' %}<span class="badge bg-info ms-1">UniFi</span>
+                    {% elif w['detect_method'] == 'static' %}<span class="badge bg-warning text-dark ms-1">Static</span>
+                    {% endif %}
+                </td>
+                <td><code>{{ w['current_ip'] or 'Not detected' }}</code></td>
+            </tr>
+            {% endfor %}
         </table>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Make timezone select searchable via a text filter
+const sel = document.getElementById('timezoneSelect');
+if (sel) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-control form-control-sm mb-2';
+    input.placeholder = 'Type to filter timezones...';
+    sel.parentNode.insertBefore(input, sel);
+    const opts = Array.from(sel.options);
+    input.addEventListener('input', function() {
+        const q = this.value.toLowerCase();
+        sel.innerHTML = '';
+        opts.filter(o => o.value.toLowerCase().includes(q))
+            .forEach(o => sel.appendChild(o));
+    });
+}
+</script>
 {% endblock %}

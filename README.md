@@ -1,6 +1,6 @@
 # UpdateIP
 
-A password-protected Flask web app that monitors your public IP address and automatically updates Cloudflare DNS A records when it changes. Also integrates with Nginx Proxy Manager for full proxy host management.
+A password-protected Flask web app that monitors your public IP address and automatically updates Cloudflare DNS records when it changes. Supports **multi-WAN** setups with **UniFi controller integration** for automatic WAN detection. Also integrates with Nginx Proxy Manager for proxy host management.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)
 ![Flask](https://img.shields.io/badge/Flask-3.x-green?logo=flask&logoColor=white)
@@ -9,13 +9,18 @@ A password-protected Flask web app that monitors your public IP address and auto
 
 ## Features
 
+- **Multi-WAN Support** — Manage multiple WAN interfaces and assign each DNS record to a specific WAN
+- **UniFi Integration** — Auto-detect WAN IPs and ISP info from UniFi Dream Machine (UDM, UDM-Pro, UDM-SE, UCG)
 - **IP Monitoring** — Automatically detects public IP changes via multiple providers
 - **Cloudflare DNS Updates** — Auto-updates selected A records when IP changes
+- **All Record Types** — View and manage A, CNAME, MX, TXT, and all other DNS record types
+- **Per-Domain Grouping** — DNS records organized by domain with clear section headers
 - **Multiple Accounts** — Manage multiple Cloudflare accounts and zones
 - **Nginx Proxy Manager** — Full CRUD for proxy hosts on a remote NPM instance
 - **Background Scheduler** — Configurable interval (1 min – 24 hours, default 5 min)
 - **Manual & Force Update** — One-click update or force-push to all records
 - **Change History** — Full log of IP changes and DNS update results
+- **Timezone Support** — Configurable timezone for all displayed timestamps
 - **Dark Theme UI** — Clean Bootstrap 5 dark interface with sidebar navigation
 - **Password Protected** — bcrypt-hashed passwords, session-based authentication
 
@@ -65,17 +70,30 @@ Password: admin
 
 ### 1. Add a Cloudflare Account
 
-Go to **Accounts** → **Add Account** → enter a name and API token. Zones and DNS records are fetched automatically.
+Go to **Accounts** → **Add Account** → enter a name and API token. Zones and DNS records (all types) are fetched automatically.
 
-### 2. Select Records for Auto-Update
+### 2. Configure WAN Interfaces
 
-Go to **DNS Records** → toggle **Auto-Update** on for records you want to keep in sync with your public IP.
+Go to **WAN Interfaces** to set up your internet connections:
 
-### 3. Monitor
+- **UniFi Controller** — Click **UniFi Connection**, enter your UDM gateway IP (e.g., `https://192.168.1.1`), username, and password. WANs are auto-detected with IPs and ISP names.
+- **Manual** — Add WANs manually with auto-detect (external IP services), static IP, or UniFi source.
 
-The **Dashboard** shows your current IP, all monitored records with status, and recent update activity. The background scheduler checks for IP changes automatically.
+> **Tip:** Create a local-only admin account on your UniFi OS console for best security.
 
-### 4. Nginx Proxy Manager (Optional)
+### 3. Select Records for Auto-Update
+
+Go to **DNS Records** → records are grouped by domain. Toggle **Auto-Update** on A records you want to keep in sync with your public IP. Assign each record to a specific WAN if you have multiple.
+
+### 4. Monitor
+
+The **Dashboard** shows your current IP per WAN, all monitored records with status, and recent update activity. The background scheduler checks for IP changes automatically.
+
+### 5. Configure Timezone
+
+Go to **Settings** → **Timezone** to set your display timezone. All timestamps throughout the app will display in your local time.
+
+### 6. Nginx Proxy Manager (Optional)
 
 Go to **Proxy Manager** → **Connection** → enter your NPM URL (e.g., `http://192.168.1.100:81`), admin email, and password. Then manage all proxy hosts directly from UpdateIP.
 
@@ -85,12 +103,23 @@ Go to **Proxy Manager** → **Connection** → enter your NPM URL (e.g., `http:/
 app.py              — Main Flask app: routes, auth, scheduler
 database.py         — SQLite schema and helpers
 cloudflare_api.py   — Cloudflare API v4 client
+unifi_api.py        — UniFi OS controller API client (UDM/UDM-Pro/UDM-SE)
 npm_api.py          — Nginx Proxy Manager API client
-updater.py          — IP detection + DNS update logic
+updater.py          — IP detection + DNS update logic (multi-WAN)
 config.py           — App configuration
 wsgi.py             — Gunicorn entry point
 setup.sh            — Automated setup script
 templates/          — Jinja2 templates (Bootstrap 5 dark theme)
+  base.html         — Layout with sidebar navigation
+  dashboard.html    — IP status per WAN, monitored records, activity
+  accounts.html     — Cloudflare account management
+  records.html      — DNS records grouped by domain
+  wan.html          — WAN interfaces + UniFi connection
+  npm.html          — NPM proxy host listing
+  npm_form.html     — Add/edit proxy host form
+  logs.html         — IP change & DNS update history
+  settings.html     — Password, update interval, timezone
+  login.html        — Login page
 ```
 
 ## Management
@@ -118,7 +147,7 @@ journalctl -u updateip -f
 | Frontend | Jinja2, Bootstrap 5 (dark), Bootstrap Icons |
 | Scheduler | Flask-APScheduler |
 | Auth | bcrypt, Flask sessions |
-| APIs | Cloudflare API v4, NPM REST API |
+| APIs | Cloudflare API v4, UniFi OS API, NPM REST API |
 | Deploy | systemd + Nginx reverse proxy |
 
 ## License

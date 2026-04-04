@@ -24,7 +24,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS settings (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             update_interval INTEGER NOT NULL DEFAULT 300,
-            current_ip TEXT DEFAULT ''
+            current_ip TEXT DEFAULT '',
+            timezone TEXT NOT NULL DEFAULT 'UTC'
         );
 
         CREATE TABLE IF NOT EXISTS cf_accounts (
@@ -81,7 +82,44 @@ def init_db():
             email TEXT NOT NULL DEFAULT '',
             password TEXT NOT NULL DEFAULT ''
         );
+
+        CREATE TABLE IF NOT EXISTS wan_interfaces (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            detect_method TEXT NOT NULL DEFAULT 'auto',
+            static_ip TEXT DEFAULT '',
+            current_ip TEXT DEFAULT '',
+            unifi_wan_name TEXT DEFAULT '',
+            isp_name TEXT DEFAULT '',
+            last_checked TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS unifi_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            url TEXT NOT NULL DEFAULT '',
+            username TEXT NOT NULL DEFAULT '',
+            password TEXT NOT NULL DEFAULT '',
+            site_name TEXT NOT NULL DEFAULT 'default',
+            verify_ssl INTEGER NOT NULL DEFAULT 0
+        );
     ''')
+    # Migrate: add wan_id column to cf_records if missing
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(cf_records)").fetchall()]
+    if 'wan_id' not in cols:
+        conn.execute("ALTER TABLE cf_records ADD COLUMN wan_id INTEGER")
+    # Migrate: add wan_id column to ip_log if missing
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(ip_log)").fetchall()]
+    if 'wan_id' not in cols:
+        conn.execute("ALTER TABLE ip_log ADD COLUMN wan_id INTEGER")
+    # Ensure unifi_settings row exists
+    if not conn.execute('SELECT id FROM unifi_settings WHERE id = 1').fetchone():
+        conn.execute('INSERT INTO unifi_settings (id, url, username, password, site_name, verify_ssl) '
+                     'VALUES (1, "", "", "", "default", 0)')
+    # Migrate: add isp_name to wan_interfaces if missing
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(wan_interfaces)").fetchall()]
+    if cols and 'isp_name' not in cols:
+        conn.execute("ALTER TABLE wan_interfaces ADD COLUMN isp_name TEXT DEFAULT ''")
     # Ensure npm_settings row exists
     npm_row = conn.execute('SELECT id FROM npm_settings WHERE id = 1').fetchone()
     if not npm_row:
@@ -89,6 +127,10 @@ def init_db():
     # Ensure settings row exists
     row = conn.execute('SELECT id FROM settings WHERE id = 1').fetchone()
     if not row:
-        conn.execute('INSERT INTO settings (id, update_interval, current_ip) VALUES (1, 300, "")')
+        conn.execute('INSERT INTO settings (id, update_interval, current_ip, timezone) VALUES (1, 300, "", "UTC")')
+    # Migrate: add timezone to settings if missing
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(settings)").fetchall()]
+    if 'timezone' not in cols:
+        conn.execute("ALTER TABLE settings ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC'")
     conn.commit()
     conn.close()

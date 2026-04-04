@@ -20,7 +20,7 @@
                 <p class="text-muted small mb-1">
                     Token: <code>{{ acc['api_token'][:8] }}...{{ acc['api_token'][-4:] }}</code>
                 </p>
-                <p class="text-muted small mb-0">Added: {{ acc['created_at'] }}</p>
+                <p class="text-muted small mb-0">Added: {{ acc['created_at']|localtime }}</p>
             </div>
             <div class="card-footer d-flex gap-2">
                 <form method="POST" action="{{ url_for('account_sync', account_id=acc['id']) }}">

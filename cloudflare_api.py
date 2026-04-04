@@ -50,14 +50,17 @@ def list_zones(api_token):
 
 
 def list_dns_records(api_token, zone_id, record_type='A'):
-    """Return list of DNS A records for a zone."""
+    """Return list of DNS records for a zone. Pass record_type=None to get all types."""
     records = []
     page = 1
     while True:
         try:
+            params = {'page': page, 'per_page': 100}
+            if record_type:
+                params['type'] = record_type
             r = requests.get(f'{CF_API_BASE}/zones/{zone_id}/dns_records',
                              headers=_headers(api_token),
-                             params={'type': record_type, 'page': page, 'per_page': 100},
+                             params=params,
                              timeout=15)
             data = r.json()
             if not data.get('success'):

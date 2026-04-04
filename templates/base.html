@@ -41,6 +41,11 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link {% if request.endpoint in ('wan_list', 'wan_add', 'wan_edit') %}active{% endif %}" href="{{ url_for('wan_list') }}">
+                    <i class="bi bi-diagram-3 me-2"></i>WAN Interfaces
+                </a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link {% if request.endpoint in ('npm_hosts', 'npm_host_add', 'npm_host_edit') %}active{% endif %}" href="{{ url_for('npm_hosts') }}">
                     <i class="bi bi-hdd-network me-2"></i>Proxy Manager
                 </a>
