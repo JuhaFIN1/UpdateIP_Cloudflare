@@ -25,12 +25,15 @@ from updater import check_and_update_ip
 from npm_api import get_npm_client, NpmClient
 from unifi_api import get_unifi_client, clear_cached_client, UnifiClient
 
+from config import APP_VERSION
+
 # ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 app.config['SCHEDULER_API_ENABLED'] = False
+app.config['APP_VERSION'] = APP_VERSION
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(name)s: %(message)s')

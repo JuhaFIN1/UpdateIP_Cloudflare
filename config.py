@@ -4,6 +4,8 @@
 import os
 import secrets
 
+APP_VERSION = '0.85 beta'
+
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 SECRET_KEY = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
