@@ -91,10 +91,6 @@ def check_and_update_ip(force=False):
             db.commit()
             return {'success': False, 'message': 'Could not determine public IP'}
 
-        if not ip_changed_any and not force:
-            db.commit()
-            return {'success': True, 'message': 'IP unchanged', 'ip': auto_ip or '', 'updated': 0}
-
         db.commit()
 
         # Update DNS records
@@ -110,6 +106,7 @@ def check_and_update_ip(force=False):
 
         updated = 0
         errors = 0
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
         for rec in records:
             if rec['wan_id'] and rec['wan_id'] in wan_ips:
                 target_ip = wan_ips[rec['wan_id']]
@@ -119,6 +116,9 @@ def check_and_update_ip(force=False):
                 continue
 
             if rec['content'] == target_ip and not force:
+                # Already correct — mark as current
+                db.execute('UPDATE cf_records SET last_updated = ?, last_status = ? WHERE id = ?',
+                           (now, 'success', rec['id']))
                 continue
 
             success, msg = update_dns_record(
@@ -131,7 +131,6 @@ def check_and_update_ip(force=False):
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (rec['id'], rec['name'], rec['zone_name'], rec['content'], target_ip, status, msg))
             if success:
-                now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
                 db.execute('UPDATE cf_records SET content = ?, last_updated = ?, last_status = ? WHERE id = ?',
                            (target_ip, now, 'success', rec['id']))
                 updated += 1

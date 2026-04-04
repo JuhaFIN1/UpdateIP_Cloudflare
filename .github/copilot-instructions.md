@@ -87,10 +87,12 @@ journalctl -u updateip -f
 ## Key Patterns
 
 - **UniFi sync + DNS update flow**: `scheduled_unifi_sync()` refreshes WAN IPs/ISP from UniFi (`stat/device` endpoint for WAN2, `stat/health` for WAN1), then calls `check_and_update_ip()` which compares stored IPs → updates Cloudflare records marked `auto_update=1` → logs to `ip_log` and `update_log`. This is a single merged job — no separate IP check job.
+- **check_and_update_ip()**: Always iterates all `auto_update=1` records. Records already matching the target IP are marked `last_status='success'` with a timestamp (not skipped). Only calls the Cloudflare API when the record content differs or `force=True`.
 - **Multi-WAN**: Each `wan_interface` has a `detect_method` (unifi/static/auto). Each DNS record can be assigned to a specific WAN via `wan_id`. Unassigned records use auto-detected IP.
 - **ISP detection**: UniFi provides ISP for WAN1 via `stat/health`. For WANs missing ISP info, `ip-api.com` is used as fallback.
 - **Scheduler**: 3 APScheduler interval jobs: `unifi_sync` (WAN IPs + DNS updates), `cloudflare_sync` (re-sync records from Cloudflare), `npm_sync` (verify NPM connection). All intervals user-configurable (60s–86400s).
 - **NPM integration**: `npm_api.py:NpmClient` authenticates via JWT token, stored credentials in `npm_settings` table. All proxy host CRUD goes through the NPM REST API.
+- **mDNS**: `apply_mdns_hostname()` writes to `/etc/avahi/avahi-daemon.conf` and restarts avahi-daemon. Called on app startup from `create_app()` and when user saves hostname in Settings.
 
 ## Important Notes
 
