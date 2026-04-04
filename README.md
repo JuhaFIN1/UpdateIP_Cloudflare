@@ -13,7 +13,7 @@ A password-protected Flask web app that monitors your public IP address and auto
 - **UniFi Integration** — Auto-detect WAN IPs and ISP info from UniFi Dream Machine (UDM, UDM-Pro, UDM-SE, UCG)
 - **IP Monitoring** — Automatically detects public IP changes via multiple providers
 - **Cloudflare DNS Updates** — Auto-updates selected A records when IP changes
-- **All Record Types** — View and manage A, CNAME, MX, TXT, and all other DNS record types
+- **DNS Record CRUD** — Create, edit, and delete DNS records of all types (A, AAAA, CNAME, MX, TXT, SRV, NS, CAA) directly via Cloudflare API
 - **Per-Domain Grouping** — DNS records organized by domain with clear section headers
 - **Multiple Accounts** — Manage multiple Cloudflare accounts and zones
 - **Nginx Proxy Manager** — Full CRUD for proxy hosts on a remote NPM instance
@@ -23,14 +23,14 @@ A password-protected Flask web app that monitors your public IP address and auto
 - **Timezone Support** — Configurable timezone for all displayed timestamps
 - **mDNS / Bonjour** — Access the app via `updateip.local` on your network (configurable hostname via Avahi)
 - **Mobile Responsive** — Collapsible sidebar navigation for phones and tablets
+- **Backup & Restore** — Download full system backup as JSON; upload and selectively restore with preview comparison
 - **Dark Theme UI** — Clean Bootstrap 5 dark interface
 - **Password Protected** — bcrypt-hashed passwords, session-based authentication
 
 ## Screenshots
 
-| Dashboard | Proxy Manager |
-|-----------|---------------|
-| IP status, monitored records, recent activity | List, add, edit, delete NPM proxy hosts |
+![Dashboard](screenshots/dashboard.png)
+*Dashboard — WAN IPs with ISP info, auto-update records with status, and recent activity*
 
 ## Quick Start
 
@@ -100,7 +100,11 @@ The app is accessible at `updateip.local` on your network by default. To change 
 
 Go to **Settings** → **Timezone** to set your display timezone. All timestamps throughout the app will display in your local time.
 
-### 7. Nginx Proxy Manager (Optional)
+### 7. Backup & Restore
+
+Go to **Settings** → **Backup & Restore**. **Download Backup** exports all settings, Cloudflare accounts, zones, records, WAN interfaces, UniFi settings, NPM settings, and proxy hosts as a JSON file. To restore, upload the backup file to see a comparison preview (identical / differs / new) for each section, then selectively restore only what you need.
+
+### 8. Nginx Proxy Manager (Optional)
 
 Go to **Proxy Manager** → **Connection** → enter your NPM URL (e.g., `http://192.168.1.100:81`), admin email, and password. Then manage all proxy hosts directly from UpdateIP.
 
@@ -125,7 +129,8 @@ templates/          — Jinja2 templates (Bootstrap 5 dark theme)
   npm.html          — NPM proxy host listing
   npm_form.html     — Add/edit proxy host form
   logs.html         — IP change & DNS update history
-  settings.html     — Password, timezone, mDNS hostname, sync intervals
+  settings.html     — Password, timezone, mDNS hostname, sync intervals, backup/restore
+  restore.html      — Restore preview with comparison
   login.html        — Login page
 ```
 

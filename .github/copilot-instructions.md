@@ -35,7 +35,8 @@ templates/          — Jinja2 HTML templates (Bootstrap 5 dark theme)
   npm.html          — NPM proxy host listing + connection settings modal
   npm_form.html     — Add/edit proxy host form
   logs.html         — IP change & DNS update history
-  settings.html     — Password, timezone, mDNS hostname, system info with sync intervals
+  settings.html     — Password, timezone, mDNS hostname, system info with sync intervals, backup/restore
+  restore.html      — Restore preview with comparison UI
 ```
 
 ## Code Conventions
@@ -93,6 +94,8 @@ journalctl -u updateip -f
 - **Scheduler**: 3 APScheduler interval jobs: `unifi_sync` (WAN IPs + DNS updates), `cloudflare_sync` (re-sync records from Cloudflare), `npm_sync` (verify NPM connection). All intervals user-configurable (60s–86400s).
 - **NPM integration**: `npm_api.py:NpmClient` authenticates via JWT token, stored credentials in `npm_settings` table. All proxy host CRUD goes through the NPM REST API.
 - **mDNS**: `apply_mdns_hostname()` writes to `/etc/avahi/avahi-daemon.conf` and restarts avahi-daemon. Called on app startup from `create_app()` and when user saves hostname in Settings.
+- **Backup/Restore**: `_build_backup()` exports all DB tables + live NPM proxy hosts as JSON. `restore_preview()` compares each section (identical/different/new) with diff details. `restore_apply()` selectively restores chosen sections using upserts for DB data and NPM API for proxy hosts. Backup stored in Flask session between preview and apply.
+- **DNS CRUD**: Full create/edit/delete for all DNS record types via Cloudflare API. Routes: `record_add`, `record_edit`, `record_delete`. Records page uses modals for add/edit and confirmation modal for delete.
 
 ## Important Notes
 

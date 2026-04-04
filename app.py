@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import re
 import secrets
@@ -14,7 +15,9 @@ from flask_apscheduler import APScheduler
 
 from database import get_db, init_db, DB_PATH
 from cloudflare_api import (verify_token, list_zones, list_dns_records,
-                            get_public_ip)
+                            get_public_ip, create_dns_record,
+                            update_dns_record as cf_update_record,
+                            delete_dns_record as cf_delete_record)
 from updater import check_and_update_ip
 from npm_api import get_npm_client, NpmClient
 from unifi_api import get_unifi_client, clear_cached_client, UnifiClient
@@ -330,6 +333,11 @@ def records():
     db = get_db()
     accs = db.execute('SELECT * FROM cf_accounts ORDER BY name').fetchall()
     wans = db.execute('SELECT * FROM wan_interfaces ORDER BY name').fetchall()
+    zone_list = db.execute('''
+        SELECT z.id, z.name, z.account_id, a.name as account_name
+        FROM cf_zones z JOIN cf_accounts a ON z.account_id = a.id
+        ORDER BY z.name
+    ''').fetchall()
     recs = db.execute('''
         SELECT r.*, z.name as zone_name, a.name as account_name,
                w.name as wan_name
@@ -348,7 +356,7 @@ def records():
             zones[zn] = []
         zones[zn].append(r)
     db.close()
-    return render_template('records.html', zones=zones, accounts=accs, wans=wans)
+    return render_template('records.html', zones=zones, accounts=accs, wans=wans, zone_list=zone_list)
 
 
 @app.route('/records/toggle', methods=['POST'])
@@ -364,6 +372,123 @@ def record_toggle():
     db.commit()
     db.close()
     return redirect(url_for('records'))
+
+
+@app.route('/records/add', methods=['POST'])
+@login_required
+def record_add():
+    zone_id = request.form.get('zone_id', '').strip()
+    record_type = request.form.get('type', 'A').strip().upper()
+    name = request.form.get('name', '').strip()
+    content = request.form.get('content', '').strip()
+    proxied = request.form.get('proxied') == '1'
+    priority = request.form.get('priority', '').strip()
+    priority_val = int(priority) if priority and record_type == 'MX' else None
+
+    if not zone_id or not name or not content:
+        flash('Zone, name, and value are required', 'danger')
+        return redirect(url_for('records'))
+
+    db = get_db()
+    zone = db.execute('SELECT z.*, a.api_token FROM cf_zones z JOIN cf_accounts a ON z.account_id = a.id WHERE z.id = ?',
+                       (zone_id,)).fetchone()
+    if not zone:
+        db.close()
+        flash('Zone not found', 'danger')
+        return redirect(url_for('records'))
+
+    success, result = create_dns_record(
+        zone['api_token'], zone_id, record_type, name, content,
+        proxied=proxied, priority=priority_val
+    )
+    if success:
+        rec = result  # Cloudflare returns the created record
+        db.execute('''INSERT INTO cf_records (id, zone_id, account_id, name, type, content, proxied)
+                      VALUES (?, ?, ?, ?, ?, ?, ?)
+                      ON CONFLICT(id) DO UPDATE SET
+                        name=excluded.name, type=excluded.type,
+                        content=excluded.content, proxied=excluded.proxied''',
+                   (rec['id'], zone_id, zone['account_id'], rec['name'], rec['type'],
+                    rec['content'], 1 if rec.get('proxied') else 0))
+        db.commit()
+        flash(f'Record {rec["name"]} created', 'success')
+    else:
+        flash(f'Failed to create record: {result}', 'danger')
+    db.close()
+    return redirect(url_for('records'))
+
+
+@app.route('/records/edit', methods=['POST'])
+@login_required
+def record_edit():
+    record_id = request.form.get('record_id', '').strip()
+    record_type = request.form.get('type', 'A').strip().upper()
+    name = request.form.get('name', '').strip()
+    content = request.form.get('content', '').strip()
+    proxied = request.form.get('proxied') == '1'
+    priority = request.form.get('priority', '').strip()
+    priority_val = int(priority) if priority and record_type == 'MX' else None
+
+    if not record_id or not name or not content:
+        flash('Record ID, name, and value are required', 'danger')
+        return redirect(url_for('records'))
+
+    db = get_db()
+    rec = db.execute('''
+        SELECT r.*, a.api_token FROM cf_records r
+        JOIN cf_accounts a ON r.account_id = a.id
+        WHERE r.id = ?
+    ''', (record_id,)).fetchone()
+    if not rec:
+        db.close()
+        flash('Record not found', 'danger')
+        return redirect(url_for('records'))
+
+    success, msg = cf_update_record(
+        rec['api_token'], rec['zone_id'], record_id, name, content,
+        proxied=proxied, record_type=record_type, priority=priority_val
+    )
+    if success:
+        db.execute('UPDATE cf_records SET name = ?, type = ?, content = ?, proxied = ? WHERE id = ?',
+                   (name, record_type, content, 1 if proxied else 0, record_id))
+        db.commit()
+        flash(f'Record {name} updated', 'success')
+    else:
+        flash(f'Failed to update record: {msg}', 'danger')
+    db.close()
+    return redirect(url_for('records'))
+
+
+@app.route('/records/delete', methods=['POST'])
+@login_required
+def record_delete():
+    record_id = request.form.get('record_id', '').strip()
+    confirm = request.form.get('confirm', '')
+    if confirm != 'yes':
+        flash('Delete not confirmed', 'warning')
+        return redirect(url_for('records'))
+
+    db = get_db()
+    rec = db.execute('''
+        SELECT r.*, a.api_token FROM cf_records r
+        JOIN cf_accounts a ON r.account_id = a.id
+        WHERE r.id = ?
+    ''', (record_id,)).fetchone()
+    if not rec:
+        db.close()
+        flash('Record not found', 'danger')
+        return redirect(url_for('records'))
+
+    success, msg = cf_delete_record(rec['api_token'], rec['zone_id'], record_id)
+    if success:
+        db.execute('DELETE FROM cf_records WHERE id = ?', (record_id,))
+        db.commit()
+        flash(f'Record {rec["name"]} deleted', 'success')
+    else:
+        flash(f'Failed to delete record: {msg}', 'danger')
+    db.close()
+    return redirect(url_for('records'))
+
 
 # ---------------------------------------------------------------------------
 # Routes: Manual / Force update
@@ -479,6 +604,398 @@ def settings():
     db.close()
     timezones = sorted(available_timezones())
     return render_template('settings.html', settings=s, wans=wans, timezones=timezones)
+
+
+# ---------------------------------------------------------------------------
+# Routes: Backup / Restore
+# ---------------------------------------------------------------------------
+
+def _build_backup():
+    """Collect all system data into a dict for backup."""
+    db = get_db()
+    s = db.execute('SELECT * FROM settings WHERE id = 1').fetchone()
+    backup = {
+        'version': 1,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'settings': {
+            'timezone': s['timezone'] if s else 'UTC',
+            'mdns_hostname': s['mdns_hostname'] if s else 'updateip',
+            'unifi_interval': s['unifi_interval'] if s else 300,
+            'cloudflare_interval': s['cloudflare_interval'] if s else 3600,
+            'npm_interval': s['npm_interval'] if s else 3600,
+        },
+        'cf_accounts': [dict(r) for r in db.execute(
+            'SELECT id, name, api_token, created_at FROM cf_accounts ORDER BY name').fetchall()],
+        'cf_zones': [dict(r) for r in db.execute(
+            'SELECT id, account_id, name FROM cf_zones ORDER BY name').fetchall()],
+        'cf_records': [dict(r) for r in db.execute(
+            'SELECT id, zone_id, account_id, name, type, content, proxied, auto_update, wan_id FROM cf_records ORDER BY name').fetchall()],
+        'wan_interfaces': [dict(r) for r in db.execute(
+            'SELECT id, name, detect_method, static_ip, current_ip, unifi_wan_name, isp_name FROM wan_interfaces ORDER BY name').fetchall()],
+        'unifi_settings': {},
+        'npm_settings': {},
+        'npm_proxy_hosts': [],
+    }
+    u = db.execute('SELECT url, username, password, site_name, verify_ssl FROM unifi_settings WHERE id = 1').fetchone()
+    if u:
+        backup['unifi_settings'] = dict(u)
+    n = db.execute('SELECT url, email, password FROM npm_settings WHERE id = 1').fetchone()
+    if n:
+        backup['npm_settings'] = dict(n)
+    db.close()
+    # Fetch live NPM proxy hosts
+    client = get_npm_client()
+    if client and client.test_connection():
+        hosts = client.list_proxy_hosts()
+        for h in hosts:
+            backup['npm_proxy_hosts'].append({
+                'id': h.get('id'),
+                'domain_names': h.get('domain_names', []),
+                'forward_scheme': h.get('forward_scheme', 'http'),
+                'forward_host': h.get('forward_host', ''),
+                'forward_port': h.get('forward_port', 80),
+                'certificate_id': h.get('certificate_id', 0),
+                'ssl_forced': h.get('ssl_forced', 0),
+                'block_exploits': h.get('block_exploits', 0),
+                'caching_enabled': h.get('caching_enabled', 0),
+                'allow_websocket_upgrade': h.get('allow_websocket_upgrade', 0),
+                'http2_support': h.get('http2_support', 0),
+                'hsts_enabled': h.get('hsts_enabled', 0),
+                'hsts_subdomains': h.get('hsts_subdomains', 0),
+                'enabled': h.get('enabled', 1),
+                'access_list_id': h.get('access_list_id', 0),
+                'advanced_config': h.get('advanced_config', ''),
+                'locations': h.get('locations', []),
+            })
+    return backup
+
+
+@app.route('/backup', methods=['POST'])
+@login_required
+def backup_download():
+    backup = _build_backup()
+    data = json.dumps(backup, indent=2, default=str)
+    hostname = backup['settings'].get('mdns_hostname', 'updateip')
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f'{hostname}_backup_{ts}.json'
+    from flask import Response
+    return Response(
+        data,
+        mimetype='application/json',
+        headers={'Content-Disposition': f'attachment; filename={filename}'}
+    )
+
+
+def _compare_section(label, backup_items, current_items, key_fn, compare_fields):
+    """Compare backup items vs current. Returns list of dicts with status info."""
+    current_map = {}
+    for item in current_items:
+        k = key_fn(item)
+        current_map[k] = item
+
+    results = []
+    for bitem in backup_items:
+        k = key_fn(bitem)
+        entry = {'key': k, 'data': bitem, 'status': 'new', 'differences': []}
+        if k in current_map:
+            citem = current_map[k]
+            diffs = []
+            for field in compare_fields:
+                bval = bitem.get(field, '')
+                cval = citem.get(field, '') if isinstance(citem, dict) else (citem[field] if field in citem.keys() else '')
+                if str(bval) != str(cval):
+                    diffs.append({'field': field, 'backup': str(bval), 'current': str(cval)})
+            if diffs:
+                entry['status'] = 'different'
+                entry['differences'] = diffs
+            else:
+                entry['status'] = 'identical'
+        results.append(entry)
+    return results
+
+
+@app.route('/restore/preview', methods=['POST'])
+@login_required
+def restore_preview():
+    f = request.files.get('backup_file')
+    if not f or not f.filename:
+        flash('No file uploaded', 'danger')
+        return redirect(url_for('settings'))
+    try:
+        raw = f.read()
+        backup = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        flash('Invalid backup file', 'danger')
+        return redirect(url_for('settings'))
+
+    if not isinstance(backup, dict) or 'version' not in backup:
+        flash('Invalid backup format', 'danger')
+        return redirect(url_for('settings'))
+
+    db = get_db()
+    preview = {}
+
+    # Settings
+    if backup.get('settings'):
+        bs = backup['settings']
+        cs = db.execute('SELECT * FROM settings WHERE id = 1').fetchone()
+        s_diffs = []
+        for field in ['timezone', 'mdns_hostname', 'unifi_interval', 'cloudflare_interval', 'npm_interval']:
+            bval = str(bs.get(field, ''))
+            cval = str(cs[field]) if cs and field in cs.keys() else ''
+            if bval != cval:
+                s_diffs.append({'field': field, 'backup': bval, 'current': cval})
+        preview['settings'] = {
+            'data': bs,
+            'status': 'different' if s_diffs else 'identical',
+            'differences': s_diffs,
+        }
+
+    # Cloudflare accounts
+    if backup.get('cf_accounts'):
+        cur = [dict(r) for r in db.execute('SELECT id, name, api_token, created_at FROM cf_accounts').fetchall()]
+        preview['cf_accounts'] = _compare_section(
+            'Cloudflare Accounts', backup['cf_accounts'], cur,
+            key_fn=lambda x: str(x.get('name', '')),
+            compare_fields=['name', 'api_token']
+        )
+
+    # Cloudflare zones
+    if backup.get('cf_zones'):
+        cur = [dict(r) for r in db.execute('SELECT id, account_id, name FROM cf_zones').fetchall()]
+        preview['cf_zones'] = _compare_section(
+            'Cloudflare Zones', backup['cf_zones'], cur,
+            key_fn=lambda x: str(x.get('id', '')),
+            compare_fields=['name', 'account_id']
+        )
+
+    # DNS records
+    if backup.get('cf_records'):
+        cur = [dict(r) for r in db.execute(
+            'SELECT id, zone_id, account_id, name, type, content, proxied, auto_update, wan_id FROM cf_records').fetchall()]
+        preview['cf_records'] = _compare_section(
+            'DNS Records', backup['cf_records'], cur,
+            key_fn=lambda x: str(x.get('id', '')),
+            compare_fields=['name', 'type', 'content', 'proxied', 'auto_update']
+        )
+
+    # WAN interfaces
+    if backup.get('wan_interfaces'):
+        cur = [dict(r) for r in db.execute(
+            'SELECT id, name, detect_method, static_ip, current_ip, unifi_wan_name, isp_name FROM wan_interfaces').fetchall()]
+        preview['wan_interfaces'] = _compare_section(
+            'WAN Interfaces', backup['wan_interfaces'], cur,
+            key_fn=lambda x: str(x.get('name', '')),
+            compare_fields=['name', 'detect_method', 'static_ip', 'unifi_wan_name']
+        )
+
+    # UniFi settings
+    if backup.get('unifi_settings'):
+        bu = backup['unifi_settings']
+        cu = db.execute('SELECT url, username, password, site_name, verify_ssl FROM unifi_settings WHERE id = 1').fetchone()
+        u_diffs = []
+        for field in ['url', 'username', 'password', 'site_name', 'verify_ssl']:
+            bval = str(bu.get(field, ''))
+            cval = str(cu[field]) if cu and field in cu.keys() else ''
+            if bval != cval:
+                u_diffs.append({'field': field, 'backup': bval, 'current': cval})
+        preview['unifi_settings'] = {
+            'data': bu,
+            'status': 'different' if u_diffs else 'identical',
+            'differences': u_diffs,
+        }
+
+    # NPM settings
+    if backup.get('npm_settings'):
+        bn = backup['npm_settings']
+        cn = db.execute('SELECT url, email, password FROM npm_settings WHERE id = 1').fetchone()
+        n_diffs = []
+        for field in ['url', 'email', 'password']:
+            bval = str(bn.get(field, ''))
+            cval = str(cn[field]) if cn and field in cn.keys() else ''
+            if bval != cval:
+                n_diffs.append({'field': field, 'backup': bval, 'current': cval})
+        preview['npm_settings'] = {
+            'data': bn,
+            'status': 'different' if n_diffs else 'identical',
+            'differences': n_diffs,
+        }
+
+    # NPM proxy hosts
+    if backup.get('npm_proxy_hosts'):
+        client = get_npm_client()
+        current_hosts = []
+        if client and client.test_connection():
+            current_hosts = client.list_proxy_hosts()
+        # Build map by domain list (sorted, joined)
+        cur_map = {}
+        for h in current_hosts:
+            k = ','.join(sorted(h.get('domain_names', [])))
+            cur_map[k] = h
+        npm_results = []
+        for bh in backup['npm_proxy_hosts']:
+            k = ','.join(sorted(bh.get('domain_names', [])))
+            entry = {'key': k, 'data': bh, 'status': 'new', 'differences': []}
+            if k in cur_map:
+                ch = cur_map[k]
+                diffs = []
+                for field in ['forward_scheme', 'forward_host', 'forward_port', 'ssl_forced',
+                              'block_exploits', 'caching_enabled', 'allow_websocket_upgrade']:
+                    bval = str(bh.get(field, ''))
+                    cval = str(ch.get(field, ''))
+                    if bval != cval:
+                        diffs.append({'field': field, 'backup': bval, 'current': cval})
+                entry['status'] = 'different' if diffs else 'identical'
+                entry['differences'] = diffs
+            npm_results.append(entry)
+        preview['npm_proxy_hosts'] = npm_results
+
+    db.close()
+
+    # Store backup data in session for the apply step
+    session['pending_restore'] = backup
+
+    return render_template('restore.html', preview=preview, backup=backup)
+
+
+@app.route('/restore/apply', methods=['POST'])
+@login_required
+def restore_apply():
+    backup = session.pop('pending_restore', None)
+    if not backup:
+        flash('No pending restore data. Please upload the backup file again.', 'danger')
+        return redirect(url_for('settings'))
+
+    selected = request.form.getlist('sections')
+    if not selected:
+        flash('No sections selected for restore', 'warning')
+        return redirect(url_for('settings'))
+
+    db = get_db()
+    restored = []
+
+    if 'settings' in selected and backup.get('settings'):
+        bs = backup['settings']
+        db.execute('UPDATE settings SET timezone=?, mdns_hostname=?, unifi_interval=?, cloudflare_interval=?, npm_interval=? WHERE id=1',
+                   (bs.get('timezone', 'UTC'), bs.get('mdns_hostname', 'updateip'),
+                    bs.get('unifi_interval', 300), bs.get('cloudflare_interval', 3600),
+                    bs.get('npm_interval', 3600)))
+        if bs.get('mdns_hostname'):
+            apply_mdns_hostname(bs['mdns_hostname'])
+        restored.append('Settings')
+
+    if 'cf_accounts' in selected and backup.get('cf_accounts'):
+        for acc in backup['cf_accounts']:
+            existing = db.execute('SELECT id FROM cf_accounts WHERE name = ?', (acc['name'],)).fetchone()
+            if not existing:
+                db.execute('INSERT INTO cf_accounts (name, api_token) VALUES (?, ?)',
+                           (acc['name'], acc['api_token']))
+            else:
+                db.execute('UPDATE cf_accounts SET api_token = ? WHERE name = ?',
+                           (acc['api_token'], acc['name']))
+        restored.append('Cloudflare Accounts')
+
+    if 'cf_zones' in selected and backup.get('cf_zones'):
+        for z in backup['cf_zones']:
+            db.execute('''INSERT INTO cf_zones (id, account_id, name) VALUES (?, ?, ?)
+                          ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id, name=excluded.name''',
+                       (z['id'], z['account_id'], z['name']))
+        restored.append('Cloudflare Zones')
+
+    if 'cf_records' in selected and backup.get('cf_records'):
+        for rec in backup['cf_records']:
+            db.execute('''INSERT INTO cf_records (id, zone_id, account_id, name, type, content, proxied, auto_update, wan_id)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          ON CONFLICT(id) DO UPDATE SET
+                            zone_id=excluded.zone_id, account_id=excluded.account_id,
+                            name=excluded.name, type=excluded.type,
+                            content=excluded.content, proxied=excluded.proxied,
+                            auto_update=excluded.auto_update, wan_id=excluded.wan_id''',
+                       (rec['id'], rec['zone_id'], rec['account_id'], rec['name'],
+                        rec['type'], rec['content'], rec.get('proxied', 0),
+                        rec.get('auto_update', 0), rec.get('wan_id')))
+        restored.append('DNS Records')
+
+    if 'wan_interfaces' in selected and backup.get('wan_interfaces'):
+        for w in backup['wan_interfaces']:
+            existing = db.execute('SELECT id FROM wan_interfaces WHERE name = ?', (w['name'],)).fetchone()
+            if not existing:
+                db.execute('''INSERT INTO wan_interfaces (name, detect_method, static_ip, current_ip, unifi_wan_name, isp_name)
+                              VALUES (?, ?, ?, ?, ?, ?)''',
+                           (w['name'], w.get('detect_method', 'auto'), w.get('static_ip', ''),
+                            w.get('current_ip', ''), w.get('unifi_wan_name', ''), w.get('isp_name', '')))
+            else:
+                db.execute('''UPDATE wan_interfaces SET detect_method=?, static_ip=?, unifi_wan_name=?, isp_name=?
+                              WHERE name=?''',
+                           (w.get('detect_method', 'auto'), w.get('static_ip', ''),
+                            w.get('unifi_wan_name', ''), w.get('isp_name', ''), w['name']))
+        restored.append('WAN Interfaces')
+
+    if 'unifi_settings' in selected and backup.get('unifi_settings'):
+        bu = backup['unifi_settings']
+        db.execute('UPDATE unifi_settings SET url=?, username=?, password=?, site_name=?, verify_ssl=? WHERE id=1',
+                   (bu.get('url', ''), bu.get('username', ''), bu.get('password', ''),
+                    bu.get('site_name', 'default'), bu.get('verify_ssl', 0)))
+        restored.append('UniFi Settings')
+
+    if 'npm_settings' in selected and backup.get('npm_settings'):
+        bn = backup['npm_settings']
+        db.execute('UPDATE npm_settings SET url=?, email=?, password=? WHERE id=1',
+                   (bn.get('url', ''), bn.get('email', ''), bn.get('password', '')))
+        restored.append('NPM Settings')
+
+    db.commit()
+    db.close()
+
+    # NPM proxy hosts - restore via API
+    if 'npm_proxy_hosts' in selected and backup.get('npm_proxy_hosts'):
+        client = get_npm_client()
+        if client and client.test_connection():
+            existing = client.list_proxy_hosts()
+            existing_map = {}
+            for h in existing:
+                k = ','.join(sorted(h.get('domain_names', [])))
+                existing_map[k] = h
+            npm_ok = 0
+            npm_err = 0
+            for bh in backup['npm_proxy_hosts']:
+                k = ','.join(sorted(bh.get('domain_names', [])))
+                payload = {
+                    'domain_names': bh.get('domain_names', []),
+                    'forward_scheme': bh.get('forward_scheme', 'http'),
+                    'forward_host': bh.get('forward_host', ''),
+                    'forward_port': bh.get('forward_port', 80),
+                    'certificate_id': bh.get('certificate_id', 0),
+                    'ssl_forced': bh.get('ssl_forced', 0),
+                    'block_exploits': bh.get('block_exploits', 0),
+                    'caching_enabled': bh.get('caching_enabled', 0),
+                    'allow_websocket_upgrade': bh.get('allow_websocket_upgrade', 0),
+                    'http2_support': bh.get('http2_support', 0),
+                    'hsts_enabled': bh.get('hsts_enabled', 0),
+                    'hsts_subdomains': bh.get('hsts_subdomains', 0),
+                    'access_list_id': bh.get('access_list_id', 0),
+                    'advanced_config': bh.get('advanced_config', ''),
+                    'locations': bh.get('locations', []),
+                    'meta': {'letsencrypt_agree': False, 'dns_challenge': False},
+                }
+                if k in existing_map:
+                    ok, _ = client.update_proxy_host(existing_map[k]['id'], payload)
+                else:
+                    ok, _ = client.create_proxy_host(payload)
+                if ok:
+                    npm_ok += 1
+                else:
+                    npm_err += 1
+            restored.append(f'NPM Proxy Hosts ({npm_ok} ok, {npm_err} errors)')
+        else:
+            restored.append('NPM Proxy Hosts (skipped — not connected)')
+
+    if restored:
+        reschedule_job()
+        flash(f'Restored: {", ".join(restored)}', 'success')
+    else:
+        flash('Nothing was restored', 'info')
+    return redirect(url_for('settings'))
 
 
 # ---------------------------------------------------------------------------

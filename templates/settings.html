@@ -98,6 +98,38 @@
     </div>
 </div>
 
+<!-- Backup & Restore -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-archive me-1"></i>Backup &amp; Restore
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <h6><i class="bi bi-download me-1"></i>Backup</h6>
+                <p class="text-muted small mb-2">Download a full backup of all settings, accounts, zones, records, WAN interfaces, and proxy hosts.</p>
+                <form method="POST" action="{{ url_for('backup_download') }}">
+                    <button type="submit" class="btn btn-outline-primary">
+                        <i class="bi bi-download me-1"></i>Download Backup
+                    </button>
+                </form>
+            </div>
+            <div class="col-md-6">
+                <h6><i class="bi bi-upload me-1"></i>Restore</h6>
+                <p class="text-muted small mb-2">Upload a backup file to preview and selectively restore data.</p>
+                <form method="POST" action="{{ url_for('restore_preview') }}" enctype="multipart/form-data">
+                    <div class="input-group">
+                        <input type="file" name="backup_file" class="form-control form-control-sm" accept=".json" required>
+                        <button type="submit" class="btn btn-outline-warning">
+                            <i class="bi bi-upload me-1"></i>Preview
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- System Info -->
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">

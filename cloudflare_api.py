@@ -76,18 +76,22 @@ def list_dns_records(api_token, zone_id, record_type='A'):
     return records
 
 
-def update_dns_record(api_token, zone_id, record_id, name, ip, proxied=False):
-    """Update a DNS A record with a new IP."""
+def update_dns_record(api_token, zone_id, record_id, name, content, proxied=False, record_type='A', ttl=1, priority=None):
+    """Update a DNS record."""
     try:
+        payload = {
+            'type': record_type,
+            'name': name,
+            'content': content,
+            'proxied': proxied,
+            'ttl': ttl,
+        }
+        if priority is not None and record_type == 'MX':
+            payload['priority'] = priority
         r = requests.put(
             f'{CF_API_BASE}/zones/{zone_id}/dns_records/{record_id}',
             headers=_headers(api_token),
-            json={
-                'type': 'A',
-                'name': name,
-                'content': ip,
-                'proxied': proxied,
-            },
+            json=payload,
             timeout=15
         )
         data = r.json()
@@ -99,6 +103,56 @@ def update_dns_record(api_token, zone_id, record_id, name, ip, proxied=False):
             return False, msg
     except Exception as e:
         logger.error(f'Failed to update DNS record {record_id}: {e}')
+        return False, str(e)
+
+
+def create_dns_record(api_token, zone_id, record_type, name, content, proxied=False, ttl=1, priority=None):
+    """Create a new DNS record in a zone."""
+    try:
+        payload = {
+            'type': record_type,
+            'name': name,
+            'content': content,
+            'proxied': proxied,
+            'ttl': ttl,
+        }
+        if priority is not None and record_type == 'MX':
+            payload['priority'] = priority
+        r = requests.post(
+            f'{CF_API_BASE}/zones/{zone_id}/dns_records',
+            headers=_headers(api_token),
+            json=payload,
+            timeout=15
+        )
+        data = r.json()
+        if data.get('success'):
+            return True, data['result']
+        else:
+            errors = data.get('errors', [])
+            msg = errors[0].get('message', 'Unknown error') if errors else 'Unknown error'
+            return False, msg
+    except Exception as e:
+        logger.error(f'Failed to create DNS record: {e}')
+        return False, str(e)
+
+
+def delete_dns_record(api_token, zone_id, record_id):
+    """Delete a DNS record from a zone."""
+    try:
+        r = requests.delete(
+            f'{CF_API_BASE}/zones/{zone_id}/dns_records/{record_id}',
+            headers=_headers(api_token),
+            timeout=15
+        )
+        data = r.json()
+        if data.get('success'):
+            return True, 'Deleted successfully'
+        else:
+            errors = data.get('errors', [])
+            msg = errors[0].get('message', 'Unknown error') if errors else 'Unknown error'
+            return False, msg
+    except Exception as e:
+        logger.error(f'Failed to delete DNS record {record_id}: {e}')
         return False, str(e)
 
 
