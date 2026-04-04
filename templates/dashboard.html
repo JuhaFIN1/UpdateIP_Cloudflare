@@ -124,7 +124,7 @@
                 <tbody>
                 {% for l in recent_logs %}
                 <tr>
-                    <td class="text-nowrap">{{ l['updated_at'] }}</td>
+                    <td class="text-nowrap">{{ l['updated_at']|localtime }}</td>
                     <td><code>{{ l['record_name'] }}</code></td>
                     <td>{{ l['zone_name'] }}</td>
                     <td><code>{{ l['old_ip'] }}</code></td>

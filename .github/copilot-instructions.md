@@ -88,7 +88,8 @@ journalctl -u updateip -f
 ## Key Patterns
 
 - **UniFi sync + DNS update flow**: `scheduled_unifi_sync()` refreshes WAN IPs/ISP from UniFi (`stat/device` endpoint for WAN2, `stat/health` for WAN1), then calls `check_and_update_ip()` which compares stored IPs → updates Cloudflare records marked `auto_update=1` → logs to `ip_log` and `update_log`. This is a single merged job — no separate IP check job.
-- **check_and_update_ip()**: Always iterates all `auto_update=1` records. Records already matching the target IP are marked `last_status='success'` with a timestamp (not skipped). Only calls the Cloudflare API when the record content differs or `force=True`.
+- **check_and_update_ip()**: Always iterates all `auto_update=1` records. Records already matching the target IP are marked `last_status='success'` with a timestamp (not skipped). Only calls the Cloudflare API when the record content differs or `force=True`. Logs to `update_log` only when the Cloudflare API is called (actual update or force), not for already-matching records.
+- **Dashboard Recent Activity**: Reads from `update_log` table (last 20 entries). Shows time, record, zone, old IP, new IP, and status. Only populated when DNS records are actually pushed to Cloudflare (IP change or Force Update). Timestamps use `|localtime` filter.
 - **Multi-WAN**: Each `wan_interface` has a `detect_method` (unifi/static/auto). Each DNS record can be assigned to a specific WAN via `wan_id`. Unassigned records use auto-detected IP.
 - **ISP detection**: UniFi provides ISP for WAN1 via `stat/health`. For WANs missing ISP info, `ip-api.com` is used as fallback.
 - **Scheduler**: 3 APScheduler interval jobs: `unifi_sync` (WAN IPs + DNS updates), `cloudflare_sync` (re-sync records from Cloudflare), `npm_sync` (verify NPM connection). All intervals user-configurable (60s–86400s).
