@@ -1,4 +1,4 @@
-# UpdateIP
+# Update IP - Unifi multi Wan, Cloudflare and Nginx Proxy Manager all in one
 
 A password-protected Flask web app that monitors your public IP address and automatically updates Cloudflare DNS records when it changes. Supports **multi-WAN** setups with **UniFi controller integration** for automatic WAN detection. Also integrates with **Nginx Proxy Manager** for proxy host management and **mDNS** for easy local network access.
 
