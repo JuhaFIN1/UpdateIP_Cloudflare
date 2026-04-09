@@ -455,7 +455,7 @@ def record_add():
     record_type = request.form.get('type', 'A').strip().upper()
     name = request.form.get('name', '').strip()
     content = request.form.get('content', '').strip()
-    proxied = request.form.get('proxied') == '1'
+    proxied = '1' in request.form.getlist('proxied')
     priority = request.form.get('priority', '').strip()
     priority_val = int(priority) if priority and record_type == 'MX' else None
 
@@ -499,7 +499,7 @@ def record_edit():
     record_type = request.form.get('type', 'A').strip().upper()
     name = request.form.get('name', '').strip()
     content = request.form.get('content', '').strip()
-    proxied = request.form.get('proxied') == '1'
+    proxied = '1' in request.form.getlist('proxied')
     priority = request.form.get('priority', '').strip()
     priority_val = int(priority) if priority and record_type == 'MX' else None
 
