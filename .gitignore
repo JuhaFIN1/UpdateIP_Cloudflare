@@ -29,3 +29,9 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Internal AI assistant instructions/notes (not for public repo)
+.github/
+.claude/
+CLAUDE.md
+*memory*.md
