@@ -1,10 +1,10 @@
-# UpdateIP - Copyright (c) 2026 Juha Lempiäinen. All rights reserved.
+# UpdateIP - Copyright (c) 2026 BluexDEV Softwares. All rights reserved.
 # https://github.com/JuhaFIN1/Updateip
 
 import os
 import secrets
 
-APP_VERSION = '0.85 beta'
+APP_VERSION = '0.86 beta'
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 

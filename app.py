@@ -1,4 +1,4 @@
-# UpdateIP - Copyright (c) 2026 Juha Lempiäinen. All rights reserved.
+# UpdateIP - Copyright (c) 2026 BluexDEV Softwares. All rights reserved.
 # https://github.com/JuhaFIN1/Updateip
 
 import os
@@ -384,7 +384,9 @@ def _sync_account(account_id):
 
         # Fetch ALL record types
         dns_records = list_dns_records(acc['api_token'], z['id'], record_type=None)
+        seen_ids = []
         for rec in dns_records:
+            seen_ids.append(rec['id'])
             db.execute('''INSERT INTO cf_records
                           (id, zone_id, account_id, name, type, content, proxied)
                           VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -394,6 +396,14 @@ def _sync_account(account_id):
                             content=excluded.content, proxied=excluded.proxied''',
                        (rec['id'], z['id'], account_id, rec['name'], rec['type'],
                         rec['content'], 1 if rec.get('proxied') else 0))
+
+        # Remove local records that no longer exist in Cloudflare for this zone
+        if seen_ids:
+            placeholders = ','.join('?' * len(seen_ids))
+            db.execute(f'DELETE FROM cf_records WHERE zone_id = ? AND id NOT IN ({placeholders})',
+                       (z['id'], *seen_ids))
+        else:
+            db.execute('DELETE FROM cf_records WHERE zone_id = ?', (z['id'],))
     db.commit()
     db.close()
 
