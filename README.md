@@ -166,6 +166,6 @@ journalctl -u updateip -f
 
 ## License
 
-Copyright (c) 2026 Juha Lempiäinen
+Copyright (c) 2026 BluexDEV Softwares
 
 Source Available — free to use and share, but modifications and derivative works are not permitted. See [LICENSE](LICENSE) for details.

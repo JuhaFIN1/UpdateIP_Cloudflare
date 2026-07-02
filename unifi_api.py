@@ -1,4 +1,4 @@
-# UpdateIP - Copyright (c) 2026 Juha Lempiäinen. All rights reserved.
+# UpdateIP - Copyright (c) 2026 BluexDEV Softwares. All rights reserved.
 # https://github.com/JuhaFIN1/Updateip
 
 import requests
