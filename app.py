@@ -118,27 +118,52 @@ def ensure_admin():
 # Scheduler jobs
 # ---------------------------------------------------------------------------
 
+def _refresh_unifi_wans():
+    """Refresh WAN IPs/ISP from UniFi into wan_interfaces. Returns count of WANs updated."""
+    client = get_unifi_client()
+    if not client or not client._ensure_logged_in():
+        return 0
+    wan_details = client.get_wan_details()
+    if not wan_details:
+        return 0
+    db = get_db()
+    for unifi_name, info in wan_details.items():
+        ip = info.get('ip', '')
+        isp = info.get('isp_name', '') or info.get('isp_org', '')
+        existing = db.execute(
+            'SELECT id FROM wan_interfaces WHERE unifi_wan_name = ?', (unifi_name,)
+        ).fetchone()
+        if existing:
+            db.execute(
+                'UPDATE wan_interfaces SET current_ip = ?, isp_name = ?, last_checked = CURRENT_TIMESTAMP WHERE id = ?',
+                (ip, isp, existing['id']))
+    db.commit()
+    db.close()
+    return len(wan_details)
+
+
+def _sync_all_cloudflare_accounts():
+    """Re-sync DNS records from all Cloudflare accounts. Returns count of accounts synced."""
+    db = get_db()
+    accounts = db.execute('SELECT id FROM cf_accounts').fetchall()
+    db.close()
+    for acc in accounts:
+        _sync_account(acc['id'])
+    return len(accounts)
+
+
+def _check_npm_connection():
+    """Verify NPM connectivity. Returns True if connected."""
+    client = get_npm_client()
+    return bool(client and client.test_connection())
+
+
 def scheduled_unifi_sync():
     """Background job: refresh WAN IPs from UniFi, then check & update DNS."""
     with app.app_context():
-        client = get_unifi_client()
-        if client and client._ensure_logged_in():
-            wan_details = client.get_wan_details()
-            if wan_details:
-                db = get_db()
-                for unifi_name, info in wan_details.items():
-                    ip = info.get('ip', '')
-                    isp = info.get('isp_name', '') or info.get('isp_org', '')
-                    existing = db.execute(
-                        'SELECT id FROM wan_interfaces WHERE unifi_wan_name = ?', (unifi_name,)
-                    ).fetchone()
-                    if existing:
-                        db.execute(
-                            'UPDATE wan_interfaces SET current_ip = ?, isp_name = ?, last_checked = CURRENT_TIMESTAMP WHERE id = ?',
-                            (ip, isp, existing['id']))
-                db.commit()
-                db.close()
-                logger.info(f'UniFi sync: updated {len(wan_details)} WAN(s)')
+        updated = _refresh_unifi_wans()
+        if updated:
+            logger.info(f'UniFi sync: updated {updated} WAN(s)')
 
         # After refreshing WAN IPs, check for changes and update DNS
         logger.info('Scheduled IP check running')
@@ -149,22 +174,16 @@ def scheduled_unifi_sync():
 def scheduled_cloudflare_sync():
     """Background job: re-sync DNS records from all Cloudflare accounts."""
     with app.app_context():
-        db = get_db()
-        accounts = db.execute('SELECT id FROM cf_accounts').fetchall()
-        db.close()
-        for acc in accounts:
-            _sync_account(acc['id'])
-        logger.info(f'Cloudflare sync: synced {len(accounts)} account(s)')
+        count = _sync_all_cloudflare_accounts()
+        logger.info(f'Cloudflare sync: synced {count} account(s)')
 
 
 def scheduled_npm_sync():
     """Background job: refresh NPM proxy host data."""
     with app.app_context():
-        client = get_npm_client()
-        if not client or not client.test_connection():
-            return
-        # Just verify connection is alive; NPM data is fetched live on page load
-        logger.info('NPM sync: connection verified')
+        if _check_npm_connection():
+            # Just verify connection is alive; NPM data is fetched live on page load
+            logger.info('NPM sync: connection verified')
 
 
 def scheduled_update_check():
@@ -581,11 +600,24 @@ def record_delete():
 @app.route('/update', methods=['POST'])
 @login_required
 def manual_update():
+    wan_count = _refresh_unifi_wans()
+    cf_count = _sync_all_cloudflare_accounts()
+    npm_ok = _check_npm_connection()
     result = check_and_update_ip(force=False)
+
+    parts = []
+    if wan_count:
+        parts.append(f'{wan_count} WAN(s) refreshed')
+    if cf_count:
+        parts.append(f'{cf_count} Cloudflare account(s) synced')
+    parts.append('NPM connected' if npm_ok else 'NPM not connected')
+    parts.append(result['message'])
+    message = '. '.join(parts)
+
     if result['success']:
-        flash(result['message'], 'success')
+        flash(message, 'success')
     else:
-        flash(result['message'], 'danger')
+        flash(message, 'danger')
     return redirect(url_for('dashboard'))
 
 
