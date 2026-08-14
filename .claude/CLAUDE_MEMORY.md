@@ -12,12 +12,14 @@ Solo-projekti: **Juha** on ainoa tekijä/ylläpitäjä (copyright nykyisin "Blue
 
 **Repo:** todellinen remote on `git@github.com:JuhaFIN1/UpdateIP_Cloudflare.git` (SSH). Huom: koodin sisällä on kaksi eri vanhentunutta viittausta samaan repoon — `config.py`:n header-kommentti sanoo `JuhaFIN1/Updateip` ja README:n clone-esimerkki käyttää `YOUR_USERNAME/Updateip` -placeholderia. Kumpikaan ei täsmää — tarkista aina `git remote -v`.
 
+Juha ylläpitää useampaa samantyyppistä self-hosted-sovellusta ("BluexDEV"-ekosysteemi, mm. AdsOS, UpdateIP) ja ajaa niille yhteisiä retrofit-tehtäviä (ks. kohta 8) — jos tuntematon konsepti tulee vastaan, se saattaa olla jo ratkaistu jossain sisarprojektissa.
+
 ## 2. Tuotantostatus — LIVE, ei demo
 
 Tämä pyörii **oikeasti tuotannossa** Juhan omalla palvelimella:
 - Isäntä: `192.168.1.215`, hostname `update-ip`, Debian GNU/Linux 13 (trixie), käyttäjä `root`.
 - Working directory `/root/Updateip` ON suoraan `updateip.service`:n (systemd, gunicorn, `wsgi:app`) ajama koodi — ei erillistä build/deploy-vaihetta. Palvelu on `active` ja `enabled`.
-- Integroi Juhan oikeaa infraa: UniFi-yhdyskäytävä, Cloudflare-tili, NPM-instanssi. Muutokset `unifi_api.py`/`cloudflare_api.py`/`npm_api.py`-tiedostoihin vaikuttavat oikeaan verkkoon, eivät testidataan.
+- Integroi Juhan oikeaa infraa: UniFi-yhdyskäytävä, Cloudflare-tili, NPM-instanssi, ja nyt myös auth.selaa.fi (ks. kohta 8). Muutokset `unifi_api.py`/`cloudflare_api.py`/`npm_api.py`-tiedostoihin vaikuttavat oikeaan verkkoon, eivät testidataan.
 
 **Käsittele muutoksia sen mukaisella vakavuudella:**
 - Gunicorn/Python ei hot-reload:aa. Tiedostomuutokset (mukaan lukien `git pull`) eivät vaikuta ajossa olevaan prosessiin ennen `systemctl restart updateip` tai reboottia.
@@ -26,7 +28,8 @@ Tämä pyörii **oikeasti tuotannossa** Juhan omalla palvelimella:
 
 ## 3. Käynnissä oleva työ / avoimet TODOt
 
-Ei tunnettuja avoimia TODO-kohtia tai keskeneräisiä bugeja tämän katsauksen perusteella (viimeisin git-historia tarkistettu 2026-08-14, viimeisin committi `e6cac98` 2026-07-02). Jos uusia keskeneräisiä tehtäviä syntyy, päivitä tämä kohta — älä luota pelkkään git logiin niiden löytämiseksi, koska "miksi kesken" ei näy commiteista.
+- **auth.selaa.fi SSO:n selainpolku ei ole vielä käyttäjän itse testaama.** Kaikki yksittäiset endpointit on curl-verifioitu ja koko koodi on livenä (ks. kohta 8), mutta täysi "kirjaudu sisään BluexDEV:llä" -klikkauspolku selaimessa (auth.selaa.fi:n oma login-lomake → paluu → sessio) vaatii Juhan itse tekemän testin — sitä ei voi todentaa curlilla. Kysy onko tämä testattu ennen kuin oletat SSO:n toimivan päästä päähän.
+- Muuten ei tunnettuja avoimia TODO-kohtia tai keskeneräisiä bugeja tämän katsauksen perusteella (viimeisin git-historia tarkistettu 2026-08-14, viimeisin committi `012a63b`). Jos uusia keskeneräisiä tehtäviä syntyy, päivitä tämä kohta — älä luota pelkkään git logiin niiden löytämiseksi, koska "miksi kesken" ei näy commiteista.
 
 ## 4. Tehdyt tekniset päätökset ja perustelut
 
@@ -34,33 +37,57 @@ Ei tunnettuja avoimia TODO-kohtia tai keskeneräisiä bugeja tämän katsauksen 
 
 **WAN-kohtaiset DNS-tietueet eivät koskaan käytä auto-tunnistetun julkisen IP:n fallbackia.** `updater.py` (~rivit 113-130): jos tietueella on `wan_id` eikä kyseisen WAN:in IP ole juuri nyt saatavilla, päivitys **ohitetaan eksplisiittisesti** (kirjataan `update_log`-tauluun tilalla `skipped`) sen sijaan että pudottaisiin `auto_ip`:hen. Tarkoituksellinen valinta — fallback riskeeraisi väärän WAN:in IP:n kirjoittamisen tiettyyn WAN:iin sidottuun tietueeseen, mikä on pahempi kuin yhden kierroksen jättäminen päivittämättä.
 
+**auth.selaa.fi SSO täydentää, ei korvaa, paikallista admin/admin-loginia** ja hyväksyy vain `role == 'admin'`-vastauksia. Ks. kohta 8 perusteluineen.
+
 ## 5. Työskentelytapa-palaute (Juhan aiemmin antama)
 
-- **Ehdota ennen ajoa.** Juha haluaa nähdä seuraavat askeleet (commit/push/restart) ennen kuin niitä oikeasti ajetaan — ei suoraa tuotantoon vientiä ilman tarkistuspistettä.
+- **Ehdota ennen ajoa.** Juha haluaa nähdä seuraavat askeleet (commit/push/restart) ennen kuin niitä oikeasti ajetaan — ei suoraa tuotantoon vientiä ilman tarkistuspistettä. Vahvistettu uudelleen 2026-08-14 auth.selaa.fi-retrofitin yhteydessä: koodi kirjoitettiin ja curl-testattiin ensin, lupa commit/push/restart-toimiin pyydettiin ja saatiin erikseen ennen kuin mitään tuotantoa koskettavaa ajettiin.
 - **"Push githubiin" = molemmat haarat.** Kun hän sanoo tämän, odotus on että sekä `dev` että `main` päivittyvät (dev pushataan, sitten mergetään forward main:iin ja pushataan sekin) — ei pelkkä dev. Vahvistettu useasti. `main` liikkuu vain fast-forwardina `dev`:stä tässä repossa — jos joskus ei olisi fast-forwardattavissa, pysähdy ja kysy äläkä pakota mitään.
 - **Saattaa haluta testata itse UI:sta ensin.** Kerran keskeytti skriptin ajon ("SORI ODOTA") koska halusi klikata dashboardin "Sync"-nappia itse ennen kuin backend-toiminto ajettaisiin suoraan. Jos UI-kontrolli tekee saman kuin komento jota olet aikeissa ajaa, harkitse kysyväsi haluaako hän tehdä sen itse.
-- **Muista versio-/lisenssibumpit ilman erillistä pyyntöä.** Juha on johdonmukaisesti se joka huomauttaa `APP_VERSION`:n (`config.py`) ja copyright-headereiden päivitystarpeesta merkittävien muutosten yhteydessä. Ehdota versionostoa proaktiivisesti kun viet käyttäjänäkyvän korjauksen/ominaisuuden maaliin.
+- **Muista versio-/lisenssibumpit ilman erillistä pyyntöä.** Juha on johdonmukaisesti se joka huomauttaa `APP_VERSION`:n (`config.py`) ja copyright-headereiden päivitystarpeesta merkittävien muutosten yhteydessä. Ehdota versionostoa proaktiivisesti kun viet käyttäjänäkyvän korjauksen/ominaisuuden maaliin. (Sovellettu 2026-08-14: `0.86 beta` → `0.87 beta` osana auth.selaa.fi-retrofitia, ehdotettuna eikä pyydettynä.)
+- **Salaisuuksia (salasanat, API-secretit) ei koskaan tallenneta muistiin/tiedostoihin oma-aloitteisesti — ei edes jos käyttäjä pyytää.** 2026-08-14: Juha pyysi eksplisiittisesti "tallenna nyt pysyvästi" SSH-root-salasanalle. Kieltäydyin ja selitin miksi (selkokielinen säilytys markdown-muistitiedostossa vs. hänen oma aiempi ohjeensa olla tallentamatta), ja ehdotin parempaa korjausta: avainpohjainen SSH-autentikointi. Juha hyväksyi tämän vaihtoehdon. **Opetus: jos käyttäjän tuore pyyntö on ristiriidassa hänen oman aiemman, harkitun ja toistuvasti kirjatun ohjeensa kanssa, on oikein kysyä/ehdottaa vaihtoehtoa sen sijaan että tottelisi suoraan** — tämä ei ollut virhe eikä käyttäjä pahoittanut mieltään, vaan hyväksyi paremman ratkaisun.
 - **Repo-hygienia:** AI-avustajaan liittyvät tiedostot (`.github/`, `.claude/`, `CLAUDE.md`, `*memory*.md`) pidetään pois julkisesta GitHub-repositoriosta tarkoituksella — ne on listattu `.gitignore`:ssa. **Poikkeus:** tämä `CLAUDE_MEMORY.md` on eksplisiittisesti tarkoitettu committoitavaksi repoon (kts. kohta 7) — varmista ettei se osu `*memory*`-gitignore-sääntöön tiedostonimellä; jos se estää committoinnin, käytä `git add -f`.
 
-## 6. SMB/Windows-jako vs. Linux-isäntä — tiedosto-oikeusongelma (löydetty ja vahvistettu 2026-08-14)
+## 6. SMB/Windows-jako vs. Linux-isäntä — tiedosto-oikeusongelma (löydetty 2026-08-14, vahvistettu MOLEMPIIN suuntiin)
 
-**Ongelma:** Repo on käytettävissä myös Windows-koneelta verkkojaon kautta (`\\192.168.1.215\UpdateIP\`, joka osoittaa suoraan tähän `/root/Updateip`-hakemistoon SMB:n yli). Windowsin SMB-klientti ei näe/säilytä Unixin suoritusoikeusbittiä (`+x`) oikein. Tämä saa gitin näyttämään `setup.sh`:n "muokattuna" Windows-puolelta katsottuna:
+**Ongelma:** Repo on käytettävissä myös Windows-koneelta verkkojaon kautta (`\\192.168.1.215\UpdateIP\`, joka osoittaa suoraan tähän `/root/Updateip`-hakemistoon SMB:n yli, ja Windows-puolella myös `D:\BluexDEV\UpdateIP-LXC` -nimisenä symlinkkinä samaan jakoon). Windowsin SMB-klientti ei välitä Unixin suoritusoikeusbittiä (`+x`) oikein kumpaankaan suuntaan git:lle.
 
-```
-old mode 100755
-new mode 100644
-```
-0 lisättyä/poistettua riviä, plus varoitus `LF will be replaced by CRLF`. **Vahvistettu vertailu 2026-08-14:** Windows-puolen `git status` näytti `setup.sh`:n muokattuna; SSH:lla suoraan `/root/Updateip`:iin ajettu `git status` oli **täysin puhdas** ("nothing to commit, working tree clean"). Tämä vahvistaa, ettei mikään ole oikeasti muuttunut — kyse on pelkästä SMB:n tavasta raportoida tiedosto-oikeuksia Windowsille.
+**Suunta 1 (bitin katoaminen):** `setup.sh` näytti Windows-puolelta "muokattuna" 0 lisätyllä/poistetulla rivillä, `old mode 100755 / new mode 100644`. SSH:lla suoraan isäntäkoneelle ajettu `git status` oli samalla hetkellä täysin puhdas — pelkkä SMB-artefakti.
 
-**Riski:** Jos tämä committoidaan Windows-puolelta, `setup.sh` menettäisi suoritusoikeutensa pysyvästi Linux-puolella (ja mahdollisesti rivinvaihdot muuttuisivat CRLF:ksi), mikä rikkoisi skriptin ajettavuuden livepalvelimella.
+**Suunta 2 (bitin ilmestyminen — vahvistettu toisen kerran, auth.selaa.fi-retrofit-sessio):** kun `app.py`, `config.py`, `database.py` ja kolme templatea muokattiin Windows-jaon kautta, SMB asetti niihin **vahingossa +x-bitin** (`100644` → `100755`) vaikka mikään niistä ei ole skripti. Sama juurisyy kuin sisarprojekti AdsOS:ssa kohdattiin ja korjattiin (sen commit `5ae0927`). Tässä korjattiin `chmod 644` SSH:lla ja committoitiin erillisenä `chore: fix file modes...`-committina (`012a63b`) ennen pushia, jotta varsinainen ominaisuuscommit pysyi puhtaana.
 
-**Sääntö tulevaisuudelle:** Älä koskaan tee `git add/commit/push`-komentoja tämän projektin Windows-jaon (`\\192.168.1.215\UpdateIP\` tai mikä tahansa mapattu asema joka osoittaa samaan) kautta. Kaikki git-kirjoitusoperaatiot tehdään SSH:lla suoraan isäntäkoneelle (`192.168.1.215`, käyttäjä `root`) — komentorivin `ssh`/`scp` jos toimii, tai Python + `paramiko` jos ei (Windowsin oletus-SSH-asiakas ei tue salasanapromptia non-interaktiivisessa ympäristössä; `paramiko` toimii ilman `sshpass`-riippuvuutta). Lukuoperaatiot (koodin tarkastelu, grep, tiedostojen lukeminen) Windows-jaon kautta ovat turvallisia — ongelma koskee vain kirjoitusta/committia.
+**Riski:** Jos moodivirhe committoidaan huomaamatta, `setup.sh` menettäisi ajettavuutensa TAI tavalliset lähdekooditiedostot saisivat tarpeettoman +x-bitin — kumpikin on epäsiisti mutta jälkimmäinen ei riko toiminnallisuutta, edellinen rikkoisi deployn.
 
-**SSH-tunnistautuminen:** salasana kysytään käyttäjältä joka kerta erikseen — sitä **ei** tallenneta mihinkään tiedostoon, muistiin eikä tähän dokumenttiin. `~/.ssh/config`:ssa (Windows-puolella) on jo host-merkintä `192.168.1.215`:lle, mutta pelkkä avainautentikointi ei toiminut testissä (`Permission denied (publickey,password)`) — salasana vaadittiin.
+**Sääntö tulevaisuudelle:**
+- Älä koskaan tee `git add/commit/push`-komentoja tämän projektin Windows-jaon (`\\192.168.1.215\UpdateIP\`, `D:\BluexDEV\UpdateIP-LXC`, tai mikä tahansa mapattu asema joka osoittaa samaan) kautta. Kaikki git-kirjoitusoperaatiot SSH:lla suoraan isäntäkoneelle.
+- **Tarkista AINA `git diff --stat` SSH:n kautta ennen stagea** — jos näet mode-only-muutoksen (0 sisältöriviä, `old mode`/`new mode`) millä tahansa juuri muokatulla tiedostolla, `chmod` se takaisin oikeaksi ennen committia, tarvittaessa omana committinaan.
+- Lukuoperaatiot (koodin tarkastelu, grep, tiedostojen lukeminen/kirjoittaminen levylle) Windows-jaon kautta ovat turvallisia — ongelma koskee vain git-kirjoitusta.
+
+**SSH-tunnistautuminen — päivitetty 2026-08-14, ei enää salasanaa:** Windows-koneelle luotiin oma avainpari (`~/.ssh/id_updateip_ed25519`), julkinen avain lisätty `/root/.ssh/authorized_keys`-tiedostoon, ja `~/.ssh/config`:iin lisätty vastaava `IdentityFile`-rivi `Host 192.168.1.215` -kohtaan. `ssh 192.168.1.215` toimii nyt täysin salasanattomasti. Root-salasanaa käytettiin vain kertaluontoisesti avaimen asennukseen eikä sitä tallennettu mihinkään pysyvään paikkaan — jos avain joskus mitätöityy, kysy salasana käyttäjältä tuoreena, älä oleta mitään vanhaa arvoa oikeaksi.
 
 ## 7. Ulkoiset viitteet
 
 - Git-repo: `git@github.com:JuhaFIN1/UpdateIP_Cloudflare.git` (SSH remote, toimii).
 - Tuotantopalvelin: `192.168.1.215` (hostname `update-ip`), Debian 13, systemd-palvelu `updateip.service`, sama kone jolla `/root/Updateip` sijaitsee.
-- Windows-puolen SMB-jako samaan koodiin: `\\192.168.1.215\UpdateIP\` — ks. kohta 6 ennen kuin kirjoitat mitään sitä kautta.
+- Windows-puolen SMB-jako samaan koodiin: `\\192.168.1.215\UpdateIP\` / `D:\BluexDEV\UpdateIP-LXC` — ks. kohta 6 ennen kuin kirjoitat mitään sitä kautta.
+- **auth.selaa.fi** (Juhan oma BluexDEV-alustapalvelin): `https://auth.selaa.fi`, lähdekoodi Windows-koneella `D:\BluexDEV\auth-selaa-fi` (paikallinen kopio, ei SMB-jako). UpdateIP rekisteröity siellä sovelluksena slugilla `updateip`. Ks. kohta 8.
+- Sisarprojekti-referenssi samalle retrofit-standardille: `D:\BluexDEV\AdsOS-LXC` (symlink `\\192.168.1.227\AdsOS`), integraatiocommit `03c60c0` + filemode-fix `5ae0927`.
 - Ei mainittuja issue-trackereita, Slack-kanavia tai muita ulkoisia työkaluja.
+
+## 8. auth.selaa.fi (BluexDEV-alusta) -integraatio — toteutettu 2026-08-14
+
+UpdateIP retrofitattiin Juhan "19-pisteen standardiin" auth.selaa.fi-alustaintegraatiolle. Rekisteröity sovelluksena slugilla `updateip`; `api_key`/`api_secret` ovat vain sovelluksen omassa SQLite `app_settings`-taulussa (Settings → "BluexDEV (auth.selaa.fi)" -kortti), eivät tässä tiedostossa eivätkä missään muussakaan muistissa.
+
+**Committit:** `dafb3c9` (pääominaisuus) + `012a63b` (SMB-moodikorjaus), sekä `dev` että `main`.
+
+**Toteutettu:**
+- **1. SSO** — täydentää paikallista admin/admin-loginia (`/auth/sso/login`, `/auth/sso/callback`), hyväksyy vain `role == 'admin'`, paikallinen salasananvaihto estetty SSO-sessioilta (ei paikallista `users`-riviä päivitettäväksi). Callback rekisteröity auth.selaa.fi:n admin-paneelissa kiinteänä LAN-IP:nä `http://192.168.1.215/auth/sso/callback` (tarkoituksella ei muutettavaa mDNS-nimeä, jotta rekisteröinti ei riko jos hostname vaihdetaan Settingsissä myöhemmin).
+- **6–14, 19** — heartbeat (5min), etäkomennot rajattuna whitelistinä (`check_update`, `force_sync` — molemmat kääntävät jo olemassa olevia manuaalisia UI-toimintoja, eivät tuo uutta kykyä), feature-flagit+config (mekanismi, ei vielä käytössä mihinkään), versiotarkistus (RINNAKKAINEN, ei korvaa GitHub-itsepäivitystä), tiedotteet/changelog/alustatiedotteet (dashboard-kortti, piilossa kun tyhjä), kriittisten lokien+Telegram-forwarding (koodi valmis, botti Juhan asennettavana).
+- **15/17 (piece-sync)** — koodattu muttei ajastettu/kutsuttu mistään (dormant) — SDK:n `current_version` on null palvelinpuolella koko alustalle, ei UpdateIP:n korjattava. Aktivoidaan kun Juha vahvistaa.
+- **18** — vahvistettu aito poikkeus: `.github/workflows/` ei ole olemassa tässä repossa.
+
+**Live-verifioitu 2026-08-14** (curl oikeilla tunnuksilla + suora ajo sovelluksen omasta koodista SSH:lla): kaikki `/api/v1/agent/*`- ja info-endpointit 200/201, vastausmuodot täsmäävät koodiin tarkalleen. `GET /sso/init?app=updateip` → 302 oikeaan piilotettuun login-polkuun (todistaa rekisteröinnin aktiiviseksi). Ensimmäinen oikea heartbeat käynnissä olevasta prosessista onnistui (`AUTH_SELAA_FI_HEARTBEAT_LAST` päivittyi). Flags/config/version/notifications/changelog/platform-announcements ajettu suoraan tuotantokoodista SSH:n kautta — kaikki onnistuivat ja tallensivat odotetut (tyhjät, koska auth.selaa.fi-puolella ei ole vielä dataa tälle sovellukselle) arvot.
+
+**Ei voitu vahvistaa:** SSO:n täysi selainpolku (ks. kohta 3) — vaatii Juhan oman klikkauksen.
+
+Yksityiskohtaisempi referenssimateriaali (mistä lukea auth.selaa.fi:n API-sopimus, sisarprojektin AdsOS:n vastaava toteutus) on kirjattu Claude-session omaan pysyvään muistiin, ei tähän repoon — kysy jos tarvitset niitä uudelleen jonkin muun sisarprojektin retrofitissä.
