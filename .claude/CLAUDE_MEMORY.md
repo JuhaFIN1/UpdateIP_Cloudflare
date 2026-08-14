@@ -28,8 +28,9 @@ Tämä pyörii **oikeasti tuotannossa** Juhan omalla palvelimella:
 
 ## 3. Käynnissä oleva työ / avoimet TODOt
 
-- **auth.selaa.fi SSO:n selainpolku ei ole vielä käyttäjän itse testaama.** Kaikki yksittäiset endpointit on curl-verifioitu ja koko koodi on livenä (ks. kohta 8), mutta täysi "kirjaudu sisään BluexDEV:llä" -klikkauspolku selaimessa (auth.selaa.fi:n oma login-lomake → paluu → sessio) vaatii Juhan itse tekemän testin — sitä ei voi todentaa curlilla. Kysy onko tämä testattu ennen kuin oletat SSO:n toimivan päästä päähän.
-- Muuten ei tunnettuja avoimia TODO-kohtia tai keskeneräisiä bugeja tämän katsauksen perusteella (viimeisin git-historia tarkistettu 2026-08-14, viimeisin committi `012a63b`). Jos uusia keskeneräisiä tehtäviä syntyy, päivitä tämä kohta — älä luota pelkkään git logiin niiden löytämiseksi, koska "miksi kesken" ei näy commiteista.
+- **auth.selaa.fi-retrofit on kokonaan valmis ja vahvistettu.** Juha testasi SSO:n itse selaimessa 2026-08-14 (sama päivä kuin toteutus) ja se toimii päästä päähän — ei enää avoimia verifiointikohtia (ks. kohta 8).
+- **Telegram-botin luonti/yhdistäminen (kohta 19) on eksplisiittisesti Juhan omalla vastuulla** (BotFather-rate-limit oli aktiivinen toteutushetkellä) — koodi on valmis ja odottaa, älä tarjoudu tekemään tätä puolestaan.
+- Muuten ei tunnettuja avoimia TODO-kohtia tai keskeneräisiä bugeja tämän katsauksen perusteella (viimeisin git-historia tarkistettu 2026-08-14, viimeisin committi `cebaf13`). Jos uusia keskeneräisiä tehtäviä syntyy, päivitä tämä kohta — älä luota pelkkään git logiin niiden löytämiseksi, koska "miksi kesken" ei näy commiteista.
 
 ## 4. Tehdyt tekniset päätökset ja perustelut
 
@@ -88,6 +89,6 @@ UpdateIP retrofitattiin Juhan "19-pisteen standardiin" auth.selaa.fi-alustainteg
 
 **Live-verifioitu 2026-08-14** (curl oikeilla tunnuksilla + suora ajo sovelluksen omasta koodista SSH:lla): kaikki `/api/v1/agent/*`- ja info-endpointit 200/201, vastausmuodot täsmäävät koodiin tarkalleen. `GET /sso/init?app=updateip` → 302 oikeaan piilotettuun login-polkuun (todistaa rekisteröinnin aktiiviseksi). Ensimmäinen oikea heartbeat käynnissä olevasta prosessista onnistui (`AUTH_SELAA_FI_HEARTBEAT_LAST` päivittyi). Flags/config/version/notifications/changelog/platform-announcements ajettu suoraan tuotantokoodista SSH:n kautta — kaikki onnistuivat ja tallensivat odotetut (tyhjät, koska auth.selaa.fi-puolella ei ole vielä dataa tälle sovellukselle) arvot.
 
-**Ei voitu vahvistaa:** SSO:n täysi selainpolku (ks. kohta 3) — vaatii Juhan oman klikkauksen.
+**SSO:n täysi selainpolku vahvistettu 2026-08-14:** Juha kirjautui itse "Sign in with BluexDEV" -napilla onnistuneesti — koko retrofit (kohdat 1, 6-14, 19-koodi) on nyt sekä curl- että käyttäjä-vahvistettu, ei avoimia kohtia. Telegram (19) jää Juhan omalle vastuulle BotFather-rajoitteen takia (ks. kohta 3).
 
 Yksityiskohtaisempi referenssimateriaali (mistä lukea auth.selaa.fi:n API-sopimus, sisarprojektin AdsOS:n vastaava toteutus) on kirjattu Claude-session omaan pysyvään muistiin, ei tähän repoon — kysy jos tarvitset niitä uudelleen jonkin muun sisarprojektin retrofitissä.
