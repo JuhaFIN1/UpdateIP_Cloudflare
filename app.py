@@ -783,6 +783,13 @@ def _sync_account(account_id):
         return
 
     zones = list_zones(acc['api_token'])
+    if zones is None:
+        # Cloudflare API call failed — leave local records untouched rather
+        # than treating "couldn't reach Cloudflare" as "zero zones exist".
+        logger.error('Cloudflare sync aborted for account "%s": failed to list zones', acc['name'])
+        db.close()
+        return
+
     for z in zones:
         db.execute('''INSERT INTO cf_zones (id, account_id, name) VALUES (?, ?, ?)
                       ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id, name=excluded.name''',
@@ -790,6 +797,12 @@ def _sync_account(account_id):
 
         # Fetch ALL record types
         dns_records = list_dns_records(acc['api_token'], z['id'], record_type=None)
+        if dns_records is None:
+            # Same reasoning as above: an API failure is not evidence the
+            # zone has no records, so skip this zone's cleanup this round.
+            logger.error('Cloudflare sync skipped zone "%s": failed to list DNS records', z['name'])
+            continue
+
         seen_ids = []
         for rec in dns_records:
             seen_ids.append(rec['id'])

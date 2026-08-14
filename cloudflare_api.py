@@ -29,7 +29,9 @@ def verify_token(api_token):
 
 
 def list_zones(api_token):
-    """Return list of zones accessible with this token."""
+    """Return list of zones accessible with this token, or None if the
+    request could not be completed (network error / API failure). Callers
+    must treat None as 'unknown state' and not as 'zero zones'."""
     zones = []
     page = 1
     while True:
@@ -39,21 +41,26 @@ def list_zones(api_token):
                              params={'page': page, 'per_page': 50},
                              timeout=15)
             data = r.json()
-            if not data.get('success'):
-                break
-            zones.extend(data.get('result', []))
-            total_pages = data.get('result_info', {}).get('total_pages', 1)
-            if page >= total_pages:
-                break
-            page += 1
         except Exception as e:
             logger.error(f'Failed to list zones: {e}')
+            return None
+        if not data.get('success'):
+            logger.error(f'Failed to list zones: {data.get("errors")}')
+            return None
+        zones.extend(data.get('result', []))
+        total_pages = data.get('result_info', {}).get('total_pages', 1)
+        if page >= total_pages:
             break
+        page += 1
     return zones
 
 
 def list_dns_records(api_token, zone_id, record_type='A'):
-    """Return list of DNS records for a zone. Pass record_type=None to get all types."""
+    """Return list of DNS records for a zone, or None if the request could
+    not be completed (network error / API failure). Pass record_type=None
+    to get all types. Callers must treat None as 'unknown state' and not
+    as 'zero records' — conflating the two causes local records to be
+    deleted whenever Cloudflare is unreachable."""
     records = []
     page = 1
     while True:
@@ -66,16 +73,17 @@ def list_dns_records(api_token, zone_id, record_type='A'):
                              params=params,
                              timeout=15)
             data = r.json()
-            if not data.get('success'):
-                break
-            records.extend(data.get('result', []))
-            total_pages = data.get('result_info', {}).get('total_pages', 1)
-            if page >= total_pages:
-                break
-            page += 1
         except Exception as e:
             logger.error(f'Failed to list DNS records: {e}')
+            return None
+        if not data.get('success'):
+            logger.error(f'Failed to list DNS records: {data.get("errors")}')
+            return None
+        records.extend(data.get('result', []))
+        total_pages = data.get('result_info', {}).get('total_pages', 1)
+        if page >= total_pages:
             break
+        page += 1
     return records
 
 
