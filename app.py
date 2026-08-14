@@ -6,12 +6,16 @@ import json
 import logging
 import re
 import secrets
+import shutil
 import subprocess
+import threading
 from datetime import datetime, timezone
 from functools import wraps
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo, available_timezones
 
 import bcrypt
+import requests
 from flask import (Flask, render_template, request, redirect, url_for,
                    flash, session, jsonify, Response, stream_with_context)
 from flask_apscheduler import APScheduler
@@ -261,6 +265,320 @@ def reschedule_job():
         logger.info('Scheduler: update_check set to every 24h')
 
 # ---------------------------------------------------------------------------
+# Generic key/value app settings (auth.selaa.fi credentials, Telegram, etc.)
+# ---------------------------------------------------------------------------
+
+def get_setting(key, default=''):
+    db = get_db()
+    row = db.execute('SELECT value FROM app_settings WHERE key = ?', (key,)).fetchone()
+    db.close()
+    return row['value'] if row else default
+
+
+def set_setting(key, value):
+    db = get_db()
+    db.execute('INSERT INTO app_settings (key, value) VALUES (?, ?) '
+               'ON CONFLICT(key) DO UPDATE SET value = excluded.value', (key, value))
+    db.commit()
+    db.close()
+
+
+# ---------------------------------------------------------------------------
+# auth.selaa.fi (BluexDEV platform) integration
+# ---------------------------------------------------------------------------
+# Purely additive platform integration: nothing here may ever gate access to
+# UpdateIP's own features or change existing DNS/Cloudflare/UniFi/NPM behavior.
+# Every call is wrapped so failures are silently logged, never raised. Endpoint
+# paths verified directly against auth-selaa-fi's own source (src/Routes/api.php,
+# src/Controllers/AgentController.php, src/Controllers/SSOController.php) and
+# cross-checked against the AdsOS-LXC reference retrofit (commit 03c60c0), which
+# found two of the same endpoints live under /api/v1/agent/* rather than bare
+# /api/v1/*, and that critical logs go to /api/v1/logs (plural), not /api/v1/log.
+
+AUTH_SELAA_FI_SLUG = 'updateip'
+AUTH_SELAA_FI_DEFAULT_BASE = 'https://auth.selaa.fi'
+
+
+def _auth_selaa_api(method, path, **kwargs):
+    """Shared HTTP helper for auth.selaa.fi platform API calls (X-API-Key auth).
+    Returns (ok, data, status_code). Never raises."""
+    try:
+        api_key = get_setting('AUTH_SELAA_FI_API_KEY', '')
+        if not api_key:
+            return False, None, None
+        base_url = get_setting('AUTH_SELAA_FI_BASE_URL', '') or AUTH_SELAA_FI_DEFAULT_BASE
+        url = base_url.rstrip('/') + path
+        resp = requests.request(method, url, headers={'X-API-Key': api_key}, timeout=10, **kwargs)
+        try:
+            data = resp.json()
+        except ValueError:
+            data = None
+        return resp.ok, data, resp.status_code
+    except Exception as e:
+        logger.warning('auth.selaa.fi API call failed (%s): %s', path, e)
+        return False, None, None
+
+
+# ─── 6. Heartbeat ────────────────────────────────────────────────────────
+def _auth_selaa_heartbeat():
+    with app.app_context():
+        try:
+            metrics = {'agent_version': APP_VERSION}
+            try:
+                du = shutil.disk_usage('/')
+                metrics['disk_used_gb'] = round((du.total - du.free) / (1024 ** 3), 1)
+            except Exception:
+                pass
+            try:
+                meminfo = {}
+                with open('/proc/meminfo') as f:
+                    for line in f:
+                        k, v = line.split(':', 1)
+                        meminfo[k] = int(v.strip().split()[0])  # kB
+                if meminfo.get('MemTotal'):
+                    metrics['memory_total_mb'] = round(meminfo['MemTotal'] / 1024)
+                    metrics['memory_used_mb'] = round((meminfo['MemTotal'] - meminfo.get('MemAvailable', 0)) / 1024)
+            except Exception:
+                pass
+            try:
+                db = get_db()
+                metrics['active_users'] = db.execute('SELECT COUNT(*) c FROM users').fetchone()['c']
+                db.close()
+            except Exception:
+                pass
+            ok, data, status = _auth_selaa_api('POST', '/api/v1/agent/heartbeat', data=metrics)
+            if ok and data:
+                set_setting('AUTH_SELAA_FI_HEARTBEAT_LAST', datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M'))
+                if data.get('pending_commands'):
+                    _auth_selaa_poll_commands()
+        except Exception as e:
+            logger.warning('auth.selaa.fi heartbeat skipped: %s', e)
+
+
+# ─── 7. Remote commands (rajattu whitelist) ──────────────────────────────
+# Both handlers only wrap existing, already-manually-triggerable UpdateIP
+# actions (the Settings "Check for updates" link and the dashboard "Force
+# Update All" button) — no new capability is introduced, only remote
+# triggerability of what an admin could already click. check_update never
+# installs anything by itself; force_sync never touches system/network
+# settings, only the same Cloudflare DNS push the manual button does.
+def _auth_selaa_cmd_check_update():
+    scheduled_update_check()
+    return True, json.dumps(_update_info)
+
+
+def _auth_selaa_cmd_force_sync():
+    result = check_and_update_ip(force=True)
+    return True, json.dumps(result)
+
+
+_AUTH_SELAA_COMMAND_HANDLERS = {
+    'check_update': _auth_selaa_cmd_check_update,
+    'force_sync': _auth_selaa_cmd_force_sync,
+}
+
+
+def _auth_selaa_poll_commands():
+    with app.app_context():
+        try:
+            ok, data, status = _auth_selaa_api('GET', '/api/v1/agent/commands')
+            if not ok or not data:
+                return
+            for cmd in data.get('commands', []):
+                cmd_id = cmd.get('id')
+                cmd_name = cmd.get('command')
+                handler = _AUTH_SELAA_COMMAND_HANDLERS.get(cmd_name)
+                if handler is None:
+                    _auth_selaa_api('POST', f'/api/v1/agent/commands/{cmd_id}/result',
+                                     data={'status': 'error', 'error': f'unwhitelisted command: {cmd_name}'})
+                    logger.warning('auth.selaa.fi: rejected unwhitelisted remote command "%s" (id=%s)', cmd_name, cmd_id)
+                    continue
+                try:
+                    success, result_text = handler()
+                    _auth_selaa_api('POST', f'/api/v1/agent/commands/{cmd_id}/result', data={
+                        'status': 'success' if success else 'error',
+                        'result': result_text if success else '',
+                        'error': '' if success else result_text,
+                    })
+                    logger.info('auth.selaa.fi remote command "%s" (id=%s): success=%s', cmd_name, cmd_id, success)
+                except Exception as e:
+                    _auth_selaa_api('POST', f'/api/v1/agent/commands/{cmd_id}/result',
+                                     data={'status': 'error', 'error': str(e)[:500]})
+        except Exception as e:
+            logger.warning('auth.selaa.fi command poll skipped: %s', e)
+
+
+# ─── 9/10. Feature flags & config (mekanismi, fetch+cache) ───────────────
+def _auth_selaa_fetch_flags():
+    with app.app_context():
+        try:
+            ok, data, status = _auth_selaa_api('GET', '/api/v1/flags')
+            if ok and data:
+                set_setting('AUTH_SELAA_FI_FLAGS', json.dumps(data.get('flags', {})))
+        except Exception as e:
+            logger.warning('auth.selaa.fi flags fetch skipped: %s', e)
+
+
+def _auth_selaa_fetch_config():
+    with app.app_context():
+        try:
+            ok, data, status = _auth_selaa_api('GET', '/api/v1/config', params={'env': 'production'})
+            if ok and data:
+                set_setting('AUTH_SELAA_FI_CONFIG', json.dumps(data.get('config', {})))
+        except Exception as e:
+            logger.warning('auth.selaa.fi config fetch skipped: %s', e)
+
+
+def _auth_selaa_flag(key, default=False):
+    """Read a cached feature flag. Mechanism only — no flag is wired to behavior yet."""
+    try:
+        return json.loads(get_setting('AUTH_SELAA_FI_FLAGS', '') or '{}').get(key, default)
+    except Exception:
+        return default
+
+
+def _auth_selaa_cached(setting_key):
+    """Read a cached auth.selaa.fi list (notifications/changelog/platform-announcements)."""
+    try:
+        return json.loads(get_setting(setting_key, '') or '[]')
+    except Exception:
+        return []
+
+
+# ─── 11. Version check ────────────────────────────────────────────────────
+# Parallel/informational only — does NOT replace the existing GitHub-based
+# scheduled_update_check()/update_app() self-update mechanism.
+def _auth_selaa_version_check():
+    with app.app_context():
+        try:
+            ok, data, status = _auth_selaa_api('GET', '/api/v1/version/check', params={'current': APP_VERSION})
+            if ok and data:
+                set_setting('AUTH_SELAA_FI_VERSION_INFO', json.dumps(data))
+                return data
+        except Exception as e:
+            logger.warning('auth.selaa.fi version check skipped: %s', e)
+    return {}
+
+
+# ─── 12/13/14. Sisäiset tiedotteet / Changelog / Platform-tiedotteet ─────
+def _auth_selaa_fetch_notifications():
+    with app.app_context():
+        try:
+            ok, data, status = _auth_selaa_api('GET', '/api/v1/notifications')
+            if ok and data:
+                set_setting('AUTH_SELAA_FI_NOTIFICATIONS', json.dumps(data.get('notifications', [])))
+        except Exception as e:
+            logger.warning('auth.selaa.fi notifications fetch skipped: %s', e)
+
+
+def _auth_selaa_fetch_changelog():
+    with app.app_context():
+        try:
+            ok, data, status = _auth_selaa_api('GET', '/api/v1/changelog', params={'limit': 10})
+            if ok and data:
+                set_setting('AUTH_SELAA_FI_CHANGELOG', json.dumps(data.get('entries', [])))
+        except Exception as e:
+            logger.warning('auth.selaa.fi changelog fetch skipped: %s', e)
+
+
+def _auth_selaa_fetch_platform_announcements():
+    with app.app_context():
+        try:
+            ok, data, status = _auth_selaa_api('GET', '/api/v1/platform-announcements', params={'limit': 50})
+            if ok and data:
+                set_setting('AUTH_SELAA_FI_PLATFORM_ANNOUNCEMENTS', json.dumps(data.get('announcements', [])))
+        except Exception as e:
+            logger.warning('auth.selaa.fi platform-announcements fetch skipped: %s', e)
+
+
+# ─── 15/17. Piece-sync — DORMANT, not scheduled or called anywhere ───────
+# current_version is null server-side for the whole SDK as of 2026-08-14 (known
+# upstream gap, not ours to fix). Juha: "kerro kun koodi valmis niin liitän."
+# Code is ready; do NOT register a scheduler job or call _auth_selaa_ack_piece
+# until he confirms the SDK side is ready.
+def _auth_selaa_fetch_pieces():
+    with app.app_context():
+        try:
+            ok, data, status = _auth_selaa_api('GET', '/api/v1/agent/pieces')
+            if ok and data:
+                set_setting('AUTH_SELAA_FI_PIECES', json.dumps(data.get('pieces', [])))
+        except Exception as e:
+            logger.warning('auth.selaa.fi pieces fetch skipped: %s', e)
+
+
+def _auth_selaa_ack_piece(slug, new_version=None, content_hash=None):
+    if not new_version and not content_hash:
+        raise ValueError('new_version or content_hash required')
+    payload = {}
+    if new_version:
+        payload['new_version'] = new_version
+    if content_hash:
+        payload['content_hash'] = content_hash
+    return _auth_selaa_api('POST', f'/api/v1/agent/pieces/{slug}/ack', data=payload)
+
+
+# ─── 19. Telegram (koodi vain — botin luonti/yhdistäminen jää Juhalle) ───
+def _auth_selaa_send_telegram(message):
+    try:
+        token = get_setting('TELEGRAM_BOT_TOKEN', '')
+        chat_id = get_setting('TELEGRAM_CHAT_ID', '')
+        if not token or not chat_id:
+            return
+        requests.post(f'https://api.telegram.org/bot{token}/sendMessage',
+                       data={'chat_id': chat_id, 'text': message[:4000]}, timeout=10)
+    except Exception as e:
+        logger.warning('Telegram send skipped: %s', e)
+
+
+# ─── 8. Virhe-/lokiviestit — forward ERROR+/CRITICAL log records ─────────
+# Verified against auth-selaa-fi source: POST /api/v1/logs (plural), not
+# /api/v1/log or /api/v1/agent/log. Runs in a background thread so a logging
+# call anywhere in the request path is never slowed down by this.
+class _AuthSelaaLogHandler(logging.Handler):
+    def emit(self, record):
+        if record.levelno < logging.ERROR:
+            return
+        try:
+            message = self.format(record)
+        except Exception:
+            message = record.getMessage()
+        context = json.dumps({'logger': record.name, 'module': record.module, 'line': record.lineno})
+
+        def _send():
+            with app.app_context():
+                try:
+                    _auth_selaa_api('POST', '/api/v1/logs', data={
+                        'level': 'critical', 'message': message[:2000], 'context': context,
+                    })
+                    _auth_selaa_send_telegram(f'[UpdateIP] CRITICAL: {message[:500]}')
+                except Exception:
+                    pass
+
+        threading.Thread(target=_send, daemon=True, name='auth-selaa-log').start()
+
+
+def register_auth_selaa_jobs():
+    """Register auth.selaa.fi platform scheduler jobs + log forwarder. Called once from create_app()."""
+    if not any(isinstance(h, _AuthSelaaLogHandler) for h in logger.handlers):
+        logger.addHandler(_AuthSelaaLogHandler())
+
+    jobs = [
+        ('auth_selaa_heartbeat', _auth_selaa_heartbeat, 300),
+        ('auth_selaa_commands', _auth_selaa_poll_commands, 300),
+        ('auth_selaa_flags', _auth_selaa_fetch_flags, 3600),
+        ('auth_selaa_config', _auth_selaa_fetch_config, 3600),
+        ('auth_selaa_version_check', _auth_selaa_version_check, 86400),
+        ('auth_selaa_notifications', _auth_selaa_fetch_notifications, 3600),
+        ('auth_selaa_changelog', _auth_selaa_fetch_changelog, 21600),
+        ('auth_selaa_platform_announcements', _auth_selaa_fetch_platform_announcements, 21600),
+    ]
+    for job_id, func, interval in jobs:
+        if not scheduler.get_job(job_id):
+            scheduler.add_job(id=job_id, func=func, trigger='interval', seconds=interval, replace_existing=True)
+    logger.info('auth.selaa.fi: registered %d platform jobs', len(jobs))
+
+
+# ---------------------------------------------------------------------------
 # Routes: Auth
 # ---------------------------------------------------------------------------
 
@@ -284,6 +602,72 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for('login'))
+
+
+# ─── SSO (auth.selaa.fi) — complements local login, admin-only ──────────
+# Registered as an "application" on auth.selaa.fi with slug 'updateip'.
+# Callback is the LAN IP (not the configurable mdns_hostname) so the
+# registration on auth.selaa.fi's side never breaks if the mDNS hostname
+# is later renamed in Settings.
+AUTH_SELAA_FI_SSO_CALLBACK_URL = 'http://192.168.1.215/auth/sso/callback'
+
+
+@app.route('/auth/sso/login')
+def auth_sso_login():
+    api_key = get_setting('AUTH_SELAA_FI_API_KEY', '')
+    if not api_key:
+        flash('BluexDEV SSO is not configured yet.', 'danger')
+        return redirect(url_for('login'))
+    state = secrets.token_urlsafe(24)
+    session['auth_selaa_sso_state'] = state
+    base_url = get_setting('AUTH_SELAA_FI_BASE_URL', '') or AUTH_SELAA_FI_DEFAULT_BASE
+    params = urlencode({'app': AUTH_SELAA_FI_SLUG, 'redirect': AUTH_SELAA_FI_SSO_CALLBACK_URL, 'state': state})
+    return redirect(f'{base_url.rstrip("/")}/sso/init?{params}')
+
+
+@app.route('/auth/sso/callback')
+def auth_sso_callback():
+    token = request.args.get('token', '')
+    state = request.args.get('state', '')
+    expected_state = session.pop('auth_selaa_sso_state', None)
+    if not token or not state or not expected_state or state != expected_state:
+        flash('SSO login failed: invalid or expired request.', 'danger')
+        return redirect(url_for('login'))
+
+    api_key = get_setting('AUTH_SELAA_FI_API_KEY', '')
+    api_secret = get_setting('AUTH_SELAA_FI_API_SECRET', '')
+    if not api_key or not api_secret:
+        flash('BluexDEV SSO is not configured yet.', 'danger')
+        return redirect(url_for('login'))
+
+    base_url = get_setting('AUTH_SELAA_FI_BASE_URL', '') or AUTH_SELAA_FI_DEFAULT_BASE
+    data = None
+    try:
+        resp = requests.post(f'{base_url.rstrip("/")}/api/v1/sso/exchange',
+                              headers={'X-API-Key': api_key},
+                              data={'token': token, 'app_secret': api_secret}, timeout=10)
+        if resp.ok:
+            data = resp.json()
+    except Exception as e:
+        logger.warning('auth.selaa.fi SSO exchange failed: %s', e)
+
+    if not data or 'user' not in data:
+        flash('SSO login failed: could not verify identity with BluexDEV.', 'danger')
+        return redirect(url_for('login'))
+
+    user = data['user']
+    if user.get('role') != 'admin':
+        logger.warning('auth.selaa.fi SSO: rejected non-admin login (email=%s, role=%s)',
+                        user.get('email'), user.get('role'))
+        flash('SSO login denied: your BluexDEV account is not an admin.', 'danger')
+        return redirect(url_for('login'))
+
+    session['user_id'] = f"sso:{user['id']}"
+    session['username'] = user.get('display_name') or user.get('email')
+    session['auth_method'] = 'sso'
+    logger.info('auth.selaa.fi SSO: admin login for %s', user.get('email'))
+    return redirect(url_for('dashboard'))
+
 
 # ---------------------------------------------------------------------------
 # Routes: Dashboard
@@ -314,7 +698,10 @@ def dashboard():
                            wans=wans,
                            records=records,
                            recent_logs=recent_logs,
-                           update_info=_update_info)
+                           update_info=_update_info,
+                           auth_selaa_notifications=_auth_selaa_cached('AUTH_SELAA_FI_NOTIFICATIONS'),
+                           auth_selaa_changelog=_auth_selaa_cached('AUTH_SELAA_FI_CHANGELOG'),
+                           auth_selaa_platform_announcements=_auth_selaa_cached('AUTH_SELAA_FI_PLATFORM_ANNOUNCEMENTS'))
 
 # ---------------------------------------------------------------------------
 # Routes: Accounts
@@ -660,6 +1047,10 @@ def settings():
         action = request.form.get('action', '')
 
         if action == 'password':
+            if session.get('auth_method') == 'sso':
+                flash('Password is managed by BluexDEV SSO for this account.', 'warning')
+                db.close()
+                return redirect(url_for('settings'))
             current = request.form.get('current_password', '')
             new_pw = request.form.get('new_password', '')
             confirm = request.form.get('confirm_password', '')
@@ -712,6 +1103,26 @@ def settings():
                 apply_mdns_hostname(hostname)
                 flash(f'mDNS hostname set to {hostname}.local', 'success')
 
+        elif action == 'auth_selaa_fi':
+            api_key = request.form.get('auth_selaa_api_key', '').strip()
+            api_secret = request.form.get('auth_selaa_api_secret', '').strip()
+            base_url = request.form.get('auth_selaa_base_url', '').strip()
+            db.close()
+            set_setting('AUTH_SELAA_FI_API_KEY', api_key)
+            set_setting('AUTH_SELAA_FI_API_SECRET', api_secret)
+            set_setting('AUTH_SELAA_FI_BASE_URL', base_url)
+            flash('BluexDEV (auth.selaa.fi) credentials saved', 'success')
+            return redirect(url_for('settings'))
+
+        elif action == 'telegram':
+            token = request.form.get('telegram_bot_token', '').strip()
+            chat_id = request.form.get('telegram_chat_id', '').strip()
+            db.close()
+            set_setting('TELEGRAM_BOT_TOKEN', token)
+            set_setting('TELEGRAM_CHAT_ID', chat_id)
+            flash('Telegram settings saved', 'success')
+            return redirect(url_for('settings'))
+
         db.close()
         return redirect(url_for('settings'))
 
@@ -719,7 +1130,13 @@ def settings():
     wans = db.execute('SELECT * FROM wan_interfaces ORDER BY name').fetchall()
     db.close()
     timezones = sorted(available_timezones())
-    return render_template('settings.html', settings=s, wans=wans, timezones=timezones)
+    return render_template('settings.html', settings=s, wans=wans, timezones=timezones,
+                           auth_selaa_api_key=get_setting('AUTH_SELAA_FI_API_KEY', ''),
+                           auth_selaa_api_secret=get_setting('AUTH_SELAA_FI_API_SECRET', ''),
+                           auth_selaa_base_url=get_setting('AUTH_SELAA_FI_BASE_URL', ''),
+                           auth_selaa_heartbeat_last=get_setting('AUTH_SELAA_FI_HEARTBEAT_LAST', ''),
+                           telegram_bot_token=get_setting('TELEGRAM_BOT_TOKEN', ''),
+                           telegram_chat_id=get_setting('TELEGRAM_CHAT_ID', ''))
 
 
 # ---------------------------------------------------------------------------
@@ -1648,6 +2065,7 @@ def create_app():
     scheduler.init_app(app)
     scheduler.start()
     reschedule_job()
+    register_auth_selaa_jobs()
     return app
 
 

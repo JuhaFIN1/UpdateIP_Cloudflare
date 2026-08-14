@@ -100,6 +100,76 @@
     </div>
 </div>
 
+<div class="row">
+    <!-- BluexDEV (auth.selaa.fi) -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-broadcast-pin me-1"></i>BluexDEV (auth.selaa.fi)
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="auth_selaa_fi">
+                    <div class="mb-3">
+                        <label class="form-label">API Key</label>
+                        <input type="password" name="auth_selaa_api_key" class="form-control"
+                            value="{{ auth_selaa_api_key }}" autocomplete="off">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">API Secret</label>
+                        <input type="password" name="auth_selaa_api_secret" class="form-control"
+                            value="{{ auth_selaa_api_secret }}" autocomplete="off">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Base URL</label>
+                        <input type="text" name="auth_selaa_base_url" class="form-control"
+                            value="{{ auth_selaa_base_url }}" placeholder="https://auth.selaa.fi">
+                    </div>
+                    <div class="form-text mb-3">
+                        App slug <code>updateip</code>, SSO callback
+                        <code>http://192.168.1.215/auth/sso/callback</code>.
+                        {% if auth_selaa_heartbeat_last %}Last heartbeat: {{ auth_selaa_heartbeat_last }} UTC.{% else %}No heartbeat sent yet.{% endif %}
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Save
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Telegram -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-telegram me-1"></i>Telegram
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="telegram">
+                    <div class="mb-3">
+                        <label class="form-label">Bot Token</label>
+                        <input type="password" name="telegram_bot_token" class="form-control"
+                            value="{{ telegram_bot_token }}" autocomplete="off">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Chat ID</label>
+                        <input type="text" name="telegram_chat_id" class="form-control"
+                            value="{{ telegram_chat_id }}">
+                    </div>
+                    <div class="form-text mb-3">
+                        Critical errors are forwarded here once both fields are set. Bot creation/linking is done
+                        outside this app.
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Save
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Backup & Restore -->
 <div class="card mb-4">
     <div class="card-header">

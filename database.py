@@ -109,6 +109,11 @@ def init_db():
             site_name TEXT NOT NULL DEFAULT 'default',
             verify_ssl INTEGER NOT NULL DEFAULT 0
         );
+
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
+        );
     ''')
     # Migrate: add wan_id column to cf_records if missing
     cols = [r[1] for r in conn.execute("PRAGMA table_info(cf_records)").fetchall()]
