@@ -775,6 +775,17 @@ def account_sync(account_id):
     return redirect(url_for('records'))
 
 
+
+# Consecutive-failure counters for Cloudflare sync, keyed by account_id / zone
+# id. Reset to 0 on success; used to escalate a distinct alert (beyond the
+# per-occurrence ERROR forwarded by _AuthSelaaLogHandler) once a zone/account
+# has failed several sync cycles in a row, so a sustained outage or a revoked
+# token isn't lost in routine hourly noise.
+_CF_SYNC_FAIL_THRESHOLD = 3
+_cf_account_fail_counts = {}
+_cf_zone_fail_counts = {}
+
+
 def _sync_account(account_id):
     db = get_db()
     acc = db.execute('SELECT * FROM cf_accounts WHERE id = ?', (account_id,)).fetchone()
@@ -787,8 +798,14 @@ def _sync_account(account_id):
         # Cloudflare API call failed — leave local records untouched rather
         # than treating "couldn't reach Cloudflare" as "zero zones exist".
         logger.error('Cloudflare sync aborted for account "%s": failed to list zones', acc['name'])
+        fails = _cf_account_fail_counts.get(account_id, 0) + 1
+        _cf_account_fail_counts[account_id] = fails
+        if fails >= _CF_SYNC_FAIL_THRESHOLD and fails % _CF_SYNC_FAIL_THRESHOLD == 0:
+            logger.error('Cloudflare sync for account "%s" has failed %d consecutive times '
+                         '— check API token validity/permissions', acc['name'], fails)
         db.close()
         return
+    _cf_account_fail_counts[account_id] = 0
 
     for z in zones:
         db.execute('''INSERT INTO cf_zones (id, account_id, name) VALUES (?, ?, ?)
@@ -801,7 +818,13 @@ def _sync_account(account_id):
             # Same reasoning as above: an API failure is not evidence the
             # zone has no records, so skip this zone's cleanup this round.
             logger.error('Cloudflare sync skipped zone "%s": failed to list DNS records', z['name'])
+            fails = _cf_zone_fail_counts.get(z['id'], 0) + 1
+            _cf_zone_fail_counts[z['id']] = fails
+            if fails >= _CF_SYNC_FAIL_THRESHOLD and fails % _CF_SYNC_FAIL_THRESHOLD == 0:
+                logger.error('Cloudflare sync for zone "%s" has failed %d consecutive times '
+                             '— check API token validity/permissions for this zone', z['name'], fails)
             continue
+        _cf_zone_fail_counts[z['id']] = 0
 
         seen_ids = []
         for rec in dns_records:

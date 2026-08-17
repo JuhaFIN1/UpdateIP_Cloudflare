@@ -3,6 +3,7 @@
 
 import requests
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,27 @@ def _headers(api_token):
         'Authorization': f'Bearer {api_token}',
         'Content-Type': 'application/json',
     }
+
+
+def _get_with_retry(url, headers, params=None, timeout=15, max_attempts=3):
+    """GET against the Cloudflare API with retries on transient failures only
+    (network errors, 429 rate-limit, 5xx). Non-transient failures (4xx auth/
+    permission errors) return immediately since retrying them can't help."""
+    last_exc = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            r = requests.get(url, headers=headers, params=params, timeout=timeout)
+        except requests.exceptions.RequestException as e:
+            last_exc = e
+            if attempt < max_attempts:
+                time.sleep(2 ** (attempt - 1))
+                continue
+            raise
+        if (r.status_code == 429 or r.status_code >= 500) and attempt < max_attempts:
+            time.sleep(2 ** (attempt - 1))
+            continue
+        return r
+    raise last_exc
 
 
 def verify_token(api_token):
@@ -36,10 +58,10 @@ def list_zones(api_token):
     page = 1
     while True:
         try:
-            r = requests.get(f'{CF_API_BASE}/zones',
-                             headers=_headers(api_token),
-                             params={'page': page, 'per_page': 50},
-                             timeout=15)
+            r = _get_with_retry(f'{CF_API_BASE}/zones',
+                                headers=_headers(api_token),
+                                params={'page': page, 'per_page': 50},
+                                timeout=15)
             data = r.json()
         except Exception as e:
             logger.error(f'Failed to list zones: {e}')
@@ -68,10 +90,10 @@ def list_dns_records(api_token, zone_id, record_type='A'):
             params = {'page': page, 'per_page': 100}
             if record_type:
                 params['type'] = record_type
-            r = requests.get(f'{CF_API_BASE}/zones/{zone_id}/dns_records',
-                             headers=_headers(api_token),
-                             params=params,
-                             timeout=15)
+            r = _get_with_retry(f'{CF_API_BASE}/zones/{zone_id}/dns_records',
+                                headers=_headers(api_token),
+                                params=params,
+                                timeout=15)
             data = r.json()
         except Exception as e:
             logger.error(f'Failed to list DNS records: {e}')
