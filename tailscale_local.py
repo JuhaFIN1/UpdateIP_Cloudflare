@@ -123,6 +123,20 @@ def login():
         return False
 
 
+def diagnostics():
+    """Plain text for troubleshooting: Tailscale's own status and the last lines of its log. Contains no secrets."""
+    parts = []
+    for title, args in (('tailscale version', ['tailscale', 'version']), ('tailscale status', ['tailscale', 'status']),
+                        ('tailscaled log', ['journalctl', '-u', 'tailscaled', '--no-pager', '-n', '25'])):
+        r = _run(args, timeout=20)
+        text = ((r.stdout or '') + (r.stderr or '')).strip() if r else 'could not run'
+        parts.append('== %s ==
+%s' % (title, text[-2500:]))
+    return '
+
+'.join(parts)
+
+
 def logout():
     r = _run(['tailscale', 'logout'])
     return bool(r and r.returncode == 0)

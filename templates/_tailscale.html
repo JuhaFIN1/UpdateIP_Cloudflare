@@ -46,7 +46,7 @@ window.TSBox = (() => {
     }
     h += '<details><summary>Advanced</summary><div class="mt-2">' +
       (s.state === 'Running' ? '<button class="btn btn-outline-danger btn-sm mb-3" id="tsbLogout">Disconnect this container from Tailscale</button><br>' : '') +
-      '<a href="#" id="tsbTok" class="small">Use an access token instead</a>' +
+      '<a href="#" id="tsbDiag" class="small me-3">Show details</a><a href="#" id="tsbTok" class="small">Use an access token instead</a><pre id="tsbDiagOut" class="small mt-2 d-none" style="white-space:pre-wrap"></pre>' +
       '<div id="tsbTokBox" class="mt-2 ' + (tokenOpen ? '' : 'd-none') + '"><input id="tsbKey" type="password" class="form-control" placeholder="Access token (tskey-api-...)" autocomplete="off">' +
       '<button class="btn btn-primary btn-sm mt-2" id="tsbTokGo">Connect</button> <span class="small text-muted">Get one at login.tailscale.com/admin/settings/keys (lasts at most 90 days).</span></div>' +
       '<div id="tsbMsg" class="mt-2"></div></div></details>';
@@ -56,6 +56,7 @@ window.TSBox = (() => {
     if ($('tsbLogin')) $('tsbLogin').onclick = async () => { loggingIn = true; await post('{{ url_for("tailscale_local_login") }}'); refresh(); };
     if ($('tsbOn')) $('tsbOn').onchange = async () => { const r = await post('{{ url_for("tailscale_toggle") }}', {enabled: $('tsbOn').checked}); if (onReady) onReady(s); if (!r.ok) $('tsbOn').checked = false; };
     if ($('tsbLogout')) $('tsbLogout').onclick = async () => { if (confirm('Disconnect this container from Tailscale?')) { await post('{{ url_for("tailscale_local_logout") }}'); readyFired = false; refresh(); } };
+    if ($('tsbDiag')) $('tsbDiag').onclick = async e => { e.preventDefault(); const r = await fetch('{{ url_for("tailscale_local_diag") }}').then(r => r.json()); $('tsbDiagOut').textContent = r.text; $('tsbDiagOut').classList.remove('d-none'); };
     if ($('tsbTok')) $('tsbTok').onclick = e => { e.preventDefault(); tokenOpen = true; $('tsbTokBox').classList.remove('d-none'); };
     if ($('tsbTokGo')) $('tsbTokGo').onclick = async () => {
       const body = {api_key: $('tsbKey').value, tailnet: '-', enabled: true};

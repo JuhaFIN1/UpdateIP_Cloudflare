@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.15-4f8cff">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.16-4f8cff">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white">
   <img alt="Flask" src="https://img.shields.io/badge/Flask-3.x-green?logo=flask&logoColor=white">
   <img alt="Debian" src="https://img.shields.io/badge/Debian-13-a80030?logo=debian&logoColor=white">

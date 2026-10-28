@@ -1925,7 +1925,7 @@ _WIZARD_OPEN = {'wizard', 'wizard_subnets', 'wizard_scan', 'wizard_scan_status',
                 'logout', 'static', 'login', 'change_password', 'licence_page', 'licence_start',
                 'licence_poll', 'licence_unlink', 'tailscale_status', 'tailscale_test', 'tailscale_save',
                 'tailscale_toggle', 'tailscale_devices', 'tailscale_dns', 'tailscale_dns_zones', 'tailscale_local_status',
-                'tailscale_local_install', 'tailscale_local_login', 'tailscale_local_logout', 'wizard2', 'wizard2_data', 'wizard2_records',
+                'tailscale_local_install', 'tailscale_local_login', 'tailscale_local_logout', 'tailscale_local_diag', 'wizard2', 'wizard2_data', 'wizard2_records',
                 'wizard2_change', 'wizard2_delete', 'wizard2_nicknames', 'wizard2_review', 'wizard2_review_apply', 'wizard2_test', 'wizard2_run_update', 'wizard2_finish'}
 
 
@@ -2277,6 +2277,12 @@ def tailscale_local_install():
 @login_required
 def tailscale_local_login():
     return jsonify({'ok': tailscale_local.login()})
+
+
+@app.route('/tailscale/local/diag')
+@login_required
+def tailscale_local_diag():
+    return jsonify({'text': tailscale_local.diagnostics()})
 
 
 @app.route('/tailscale/local/logout', methods=['POST'])
