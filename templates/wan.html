@@ -94,8 +94,8 @@
                             <span class="badge bg-primary">Auto-Detect</span>
                             {% endif %}
                         </td>
-                        <td><code>{{ w['current_ip'] or '—' }}</code></td>
                         <td class="small text-muted">{{ w['isp_name'] or '—' }}</td>
+                        <td><code>{{ w['current_ip'] or '—' }}</code></td>
                         <td>{{ w['last_checked']|localtime or '—' }}</td>
                         <td>
                             <button class="btn btn-sm btn-outline-primary me-1" data-bs-toggle="modal"
