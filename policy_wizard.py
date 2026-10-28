@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 OWN_PREFIX = 'UpdateIP: '
 _ROUTES = '/proxy/network/v2/api/site/{site}/trafficroutes'
 _FORWARDS = '/proxy/network/api/s/{site}/rest/portforward'
+_STATIC = '/proxy/network/api/s/{site}/rest/routing'
+_TAILNET = '100.64.0.0/10'
 _ACTIVE = '/proxy/network/api/s/{site}/stat/sta'
 _KNOWN = '/proxy/network/api/s/{site}/rest/user'
 
@@ -59,7 +61,9 @@ def own_rules(client):
               for r in _get(client, _ROUTES) if (r.get('description') or '').startswith(OWN_PREFIX)]
     forwards = [{'id': f.get('_id'), 'name': f.get('name', '')[len(OWN_PREFIX):]}
                 for f in _get(client, _FORWARDS) if (f.get('name') or '').startswith(OWN_PREFIX)]
-    return {'routes': routes, 'forwards': forwards}
+    statics = [{'id': r.get('_id'), 'name': r.get('name', '')[len(OWN_PREFIX):]}
+               for r in _get(client, _STATIC) if (r.get('name') or '').startswith(OWN_PREFIX)]
+    return {'routes': routes, 'forwards': forwards, 'statics': statics}
 
 
 def _clean_name(name, fallback):
@@ -98,10 +102,9 @@ def create_route(client, payload):
 
 def delete_own(client, kind, item_id):
     """Delete a rule only if UpdateIP created it."""
-    mine = own_rules(client)['routes' if kind == 'route' else 'forwards']
-    if not any(m['id'] == item_id for m in mine):
+    group, tmpl = {'route': ('routes', _ROUTES), 'forward': ('forwards', _FORWARDS), 'static': ('statics', _STATIC)}[kind]
+    if not any(m['id'] == item_id for m in own_rules(client)[group]):
         return False, 'This rule was not created by UpdateIP and is not touched.'
-    tmpl = _ROUTES if kind == 'route' else _FORWARDS
     ok, _, status = client.write_json('delete', tmpl.format(site=client.site) + '/' + item_id)
     return ok, (None if ok else 'UniFi did not remove the rule (code %s).' % status)
 
@@ -142,6 +145,32 @@ def build_forward(client, name, wan_key, proto, ext_port, ip, int_port):
 def create_forward(client, payload):
     ok, data, status = client.write_json('post', _FORWARDS.format(site=client.site), payload)
     return ok, (None if ok else 'UniFi did not accept the port forward (code %s).' % status)
+
+
+# ---- Tailscale: reach the tailnet (100.64.0.0/10) through a device on the LAN that runs Tailscale ------------------
+def build_tailnet_route(client, via_ip):
+    try:
+        addr = ipaddress.ip_address(str(via_ip).strip())
+    except ValueError:
+        return None, None, 'Choose the device that runs Tailscale on your network.'
+    if not addr.is_private or addr.is_loopback:
+        return None, None, 'The device must be on your own network (a private address).'
+    for r in _get(client, _STATIC):
+        if r.get('static-route_network') == _TAILNET and r.get('enabled', True):
+            return None, None, 'A route to the Tailscale network already exists ("%s").' % r.get('name', '')
+    names = {d['ip']: d['name'] for d in list_clients(client) if d['ip']}
+    payload = {'name': OWN_PREFIX + 'Tailscale network', 'enabled': True, 'type': 'static-route',
+               'static-route_type': 'nexthop-route', 'static-route_network': _TAILNET,
+               'static-route_nexthop': str(addr), 'static-route_distance': 1}
+    preview = ('Traffic from your network to Tailscale addresses (%s) will be sent to %s (%s). That device must run '
+               'Tailscale and be allowed to forward traffic (a subnet router), otherwise nothing will arrive.'
+               % (_TAILNET, names.get(str(addr), 'the chosen device'), addr))
+    return payload, preview, None
+
+
+def create_static(client, payload):
+    ok, data, status = client.write_json('post', _STATIC.format(site=client.site), payload)
+    return ok, (None if ok else 'UniFi did not accept the route (code %s).' % status)
 
 
 # ---- WAN list ------------------------------------------------------------------------------------------------------

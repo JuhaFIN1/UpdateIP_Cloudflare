@@ -29,6 +29,7 @@ from npm_api import get_npm_client, NpmClient
 from unifi_api import get_unifi_client, clear_cached_client, UnifiClient
 import unifi_policies
 import discovery
+import tailscale
 import policy_wizard
 
 from config import APP_VERSION
@@ -1897,7 +1898,9 @@ def api_status():
 _WIZARD_OPEN = {'wizard', 'wizard_subnets', 'wizard_scan', 'wizard_scan_status', 'wizard_basics',
                 'wizard_cloudflare', 'wizard_unifi', 'wizard_npm', 'wizard_finish', 'wizard_skip',
                 'logout', 'static', 'login', 'change_password', 'licence_page', 'licence_start',
-                'licence_poll', 'licence_unlink'}
+                'licence_poll', 'licence_unlink', 'tailscale_status', 'tailscale_test', 'tailscale_save',
+                'tailscale_toggle', 'tailscale_devices', 'tailscale_dns', 'tailscale_dns_zones', 'wizard2', 'wizard2_data', 'wizard2_records',
+                'wizard2_change', 'wizard2_delete', 'wizard2_test', 'wizard2_run_update', 'wizard2_finish'}
 
 
 @app.before_request
@@ -1921,7 +1924,8 @@ def wizard():
     unifi = db.execute('SELECT url FROM unifi_settings WHERE id = 1').fetchone()
     npm = db.execute('SELECT url FROM npm_settings WHERE id = 1').fetchone()
     db.close()
-    return render_template('wizard.html', timezones=sorted(available_timezones()),
+    return render_template('wizard.html', ts_connected=bool(get_setting('TAILSCALE_API_KEY', '')),
+                           timezones=sorted(available_timezones()),
                            settings=s, cf_count=cf, unifi_url=(unifi['url'] if unifi else ''),
                            npm_url=(npm['url'] if npm else ''))
 
@@ -2137,7 +2141,7 @@ def wizard2_records():
 @login_required
 def wizard2_change(kind, step):
     """kind: route | forward;  step: preview | create. Create needs confirm=true."""
-    if kind not in ('route', 'forward') or step not in ('preview', 'create'):
+    if kind not in ('route', 'forward', 'static') or step not in ('preview', 'create'):
         return jsonify({'ok': False, 'error': 'Unknown request.'}), 404
     client = _wiz2_client()
     if not client:
@@ -2145,6 +2149,8 @@ def wizard2_change(kind, step):
     d = request.get_json(silent=True) or {}
     if kind == 'route':
         payload, preview, err = policy_wizard.build_route(client, d.get('name'), d.get('mac'), d.get('wan_id'), d.get('kill_switch'))
+    elif kind == 'static':
+        payload, preview, err = policy_wizard.build_tailnet_route(client, d.get('ip'))
     else:
         payload, preview, err = policy_wizard.build_forward(client, d.get('name'), d.get('wan_key'), d.get('proto'),
                                                             d.get('ext_port'), d.get('ip'), d.get('int_port'))
@@ -2154,7 +2160,8 @@ def wizard2_change(kind, step):
         return jsonify({'ok': True, 'preview': preview})
     if d.get('confirm') is not True:
         return jsonify({'ok': False, 'error': 'Confirm the change first.'})
-    ok, err = (policy_wizard.create_route(client, payload) if kind == 'route' else policy_wizard.create_forward(client, payload))
+    creators = {'route': policy_wizard.create_route, 'forward': policy_wizard.create_forward, 'static': policy_wizard.create_static}
+    ok, err = creators[kind](client, payload)
     if ok:
         logger.info('DNS & WAN wizard: created UniFi %s "%s"', kind, payload.get('description') or payload.get('name'))
     return jsonify({'ok': ok, 'error': err})
@@ -2165,7 +2172,7 @@ def wizard2_change(kind, step):
 def wizard2_delete():
     client = _wiz2_client()
     d = request.get_json(silent=True) or {}
-    if not client or d.get('kind') not in ('route', 'forward') or not d.get('id'):
+    if not client or d.get('kind') not in ('route', 'forward', 'static') or not d.get('id'):
         return jsonify({'ok': False, 'error': 'UniFi is not connected.'})
     ok, err = policy_wizard.delete_own(client, d['kind'], str(d['id']))
     return jsonify({'ok': ok, 'error': err})
@@ -2213,6 +2220,159 @@ def wizard2_run_update():
 def wizard2_finish():
     set_setting('WIZARD2_DONE', '1')
     return jsonify({'ok': True, 'next': url_for('dashboard')})
+
+
+# ---------------------------------------------------------------------------
+# Tailscale (optional, read-only): connect with an access token, list the tailnet's devices
+# ---------------------------------------------------------------------------
+@app.route('/tailscale/status')
+@login_required
+def tailscale_status():
+    return jsonify({'enabled': get_setting('TAILSCALE_ENABLED', '') == '1',
+                    'connected': bool(get_setting('TAILSCALE_API_KEY', '')),
+                    'tailnet': get_setting('TAILSCALE_TAILNET', '-') or '-'})
+
+
+@app.route('/tailscale/test', methods=['POST'])
+@login_required
+def tailscale_test():
+    d = request.get_json(silent=True) or {}
+    key = str(d.get('api_key', '')).strip() or get_setting('TAILSCALE_API_KEY', '')
+    tailnet = str(d.get('tailnet', '')).strip() or get_setting('TAILSCALE_TAILNET', '-') or '-'
+    devices, err = tailscale.list_devices(key, tailnet)
+    if err:
+        return jsonify({'ok': False, 'error': err})
+    return jsonify({'ok': True, 'count': len(devices)})
+
+
+@app.route('/tailscale/save', methods=['POST'])
+@login_required
+def tailscale_save():
+    d = request.get_json(silent=True) or {}
+    key = str(d.get('api_key', '')).strip() or get_setting('TAILSCALE_API_KEY', '')
+    tailnet = str(d.get('tailnet', '')).strip() or '-'
+    devices, err = tailscale.list_devices(key, tailnet)
+    if err:
+        return jsonify({'ok': False, 'error': err})
+    set_setting('TAILSCALE_API_KEY', key)
+    set_setting('TAILSCALE_TAILNET', tailnet)
+    set_setting('TAILSCALE_ENABLED', '1' if d.get('enabled', True) else '')
+    return jsonify({'ok': True, 'saved': True, 'count': len(devices)})
+
+
+@app.route('/tailscale/toggle', methods=['POST'])
+@login_required
+def tailscale_toggle():
+    on = bool((request.get_json(silent=True) or {}).get('enabled'))
+    if on and not get_setting('TAILSCALE_API_KEY', ''):
+        return jsonify({'ok': False, 'error': 'Connect Tailscale first (enter the access token).'})
+    set_setting('TAILSCALE_ENABLED', '1' if on else '')
+    return jsonify({'ok': True, 'enabled': on})
+
+
+@app.route('/tailscale/devices')
+@login_required
+def tailscale_devices():
+    if get_setting('TAILSCALE_ENABLED', '') != '1':
+        return jsonify({'ok': True, 'enabled': False, 'devices': []})
+    devices, err = tailscale.list_devices(get_setting('TAILSCALE_API_KEY', ''), get_setting('TAILSCALE_TAILNET', '-'))
+    if err:
+        return jsonify({'ok': False, 'enabled': True, 'error': err})
+    return jsonify({'ok': True, 'enabled': True, 'devices': devices})
+
+
+@app.route('/settings/reset', methods=['POST'])
+@login_required
+def settings_reset():
+    """Back to a fresh install: settings, password and licence link are cleared and you are signed out.
+    Needs the exact word RESET; nothing outside UpdateIP is touched."""
+    if request.form.get('confirm_text', '') != 'RESET':
+        flash('Nothing was reset. Type RESET exactly to confirm.', 'warning')
+        return redirect(url_for('settings'))
+    db = get_db()
+    for table in ('cf_records', 'cf_zones', 'cf_accounts', 'ip_log', 'update_log', 'wan_interfaces',
+                  'unifi_settings', 'npm_settings', 'settings', 'app_settings', 'users'):
+        db.execute('DELETE FROM %s' % table)
+    db.commit()
+    db.close()
+    init_db()                      # puts the default rows back
+    ensure_admin()                 # admin / admin again, with the forced password change
+    licence.unlink()               # the BluexDEV account must be linked again
+    clear_cached_client()
+    reschedule_job()
+    logger.info('All settings were reset by the user')
+    session.clear()
+    flash('Everything was reset. Sign in with admin / admin and choose a new password.', 'success')
+    return redirect(url_for('login'))
+
+
+def _ts_dns_plan(d):
+    """Validate a 'point a name at a Tailscale device' request. Returns (plan, error)."""
+    if get_setting('TAILSCALE_ENABLED', '') != '1':
+        return None, 'Turn Tailscale on first.'
+    zone_id = str(d.get('zone_id', ''))
+    label = str(d.get('name', '')).strip().lower().rstrip('.')
+    ip = str(d.get('ip', '')).strip()
+    if not re.match(r'^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}$', ip):
+        return None, 'Choose a Tailscale device.'
+    db = get_db()
+    zone = db.execute('SELECT z.id, z.name, z.account_id, a.api_token FROM cf_zones z '
+                      'JOIN cf_accounts a ON z.account_id = a.id WHERE z.id = ?', (zone_id,)).fetchone()
+    if not zone:
+        db.close()
+        return None, 'Choose a domain.'
+    if not re.match(r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$', label):
+        db.close()
+        return None, 'Enter a name using letters, numbers and hyphens, for example "nas".'
+    full = label if label.endswith('.' + zone['name']) or label == zone['name'] else '%s.%s' % (label, zone['name'])
+    existing = db.execute("SELECT id, content, auto_update FROM cf_records WHERE zone_id = ? AND name = ? AND type = 'A'",
+                          (zone['id'], full)).fetchone()
+    db.close()
+    if existing and existing['auto_update']:
+        return None, '"%s" is kept up to date with your public IP. Turn that off first, or choose another name.' % full
+    return {'zone': dict(zone), 'name': full, 'ip': ip, 'existing': dict(existing) if existing else None}, None
+
+
+@app.route('/tailscale/dns/<step>', methods=['POST'])
+@login_required
+def tailscale_dns(step):
+    """Create or change an A record that points at a Tailscale device. Preview first, then explicit confirm."""
+    if step not in ('preview', 'create'):
+        return jsonify({'ok': False, 'error': 'Unknown request.'}), 404
+    d = request.get_json(silent=True) or {}
+    plan, err = _ts_dns_plan(d)
+    if err:
+        return jsonify({'ok': False, 'error': err})
+    if plan['existing']:
+        text = '%s will change from %s to %s (a Tailscale address). It is not proxied by Cloudflare.' % (
+            plan['name'], plan['existing']['content'] or 'empty', plan['ip'])
+    else:
+        text = '%s will be created and point to %s (a Tailscale address). It is not proxied by Cloudflare. ' \
+               'Only devices on your tailnet can reach that address.' % (plan['name'], plan['ip'])
+    if step == 'preview':
+        return jsonify({'ok': True, 'preview': text})
+    if d.get('confirm') is not True:
+        return jsonify({'ok': False, 'error': 'Confirm the change first.'})
+    token = plan['zone']['api_token']
+    if plan['existing']:
+        ok, res = cf_update_record(token, plan['zone']['id'], plan['existing']['id'], plan['name'], plan['ip'],
+                                   proxied=False, record_type='A')
+    else:
+        ok, res = create_dns_record(token, plan['zone']['id'], 'A', plan['name'], plan['ip'], proxied=False)
+    if not ok:
+        return jsonify({'ok': False, 'error': 'Cloudflare did not accept the change: %s' % res})
+    _sync_account(plan['zone']['account_id'])
+    logger.info('Tailscale DNS: %s -> %s', plan['name'], plan['ip'])
+    return jsonify({'ok': True})
+
+
+@app.route('/tailscale/dns/zones')
+@login_required
+def tailscale_dns_zones():
+    db = get_db()
+    rows = db.execute('SELECT id, name FROM cf_zones ORDER BY name').fetchall()
+    db.close()
+    return jsonify({'zones': [dict(r) for r in rows]})
 
 
 @app.route('/policies')

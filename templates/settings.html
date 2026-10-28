@@ -169,6 +169,85 @@
     </div>
 </div>
 
+<!-- Tailscale -->
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-diagram-2 me-1"></i>Tailscale (optional)</span>
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="tsOn">
+            <label class="form-check-label small" for="tsOn">On</label>
+        </div>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small">Connect Tailscale to list your tailnet's devices in the wizards. UpdateIP only reads the device list. Create a token at <a href="https://login.tailscale.com/admin/settings/keys" target="_blank" rel="noopener">login.tailscale.com/admin/settings/keys</a> (Access tokens, at most 90 days).</p>
+        <div class="row g-2">
+            <div class="col-md-3"><input id="tsNet" class="form-control" value="-" placeholder="Tailnet"></div>
+            <div class="col-md-9"><input id="tsKey" type="password" class="form-control" placeholder="Access token (leave empty to keep the saved one)" autocomplete="off"></div>
+        </div>
+        <div class="mt-2">
+            <button class="btn btn-outline-primary" id="tsTest">Test</button>
+            <button class="btn btn-primary" id="tsSave" disabled>Save</button>
+        </div>
+        <div id="tsMsg" class="mt-2"></div>
+    </div>
+</div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const post = (u, b) => fetch(u, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b || {})}).then(r => r.json());
+  const say = (ok, t) => { $('tsMsg').innerHTML = '<div class="alert alert-' + (ok ? 'success' : 'danger') + ' py-2 mb-0"></div>'; $('tsMsg').firstChild.textContent = t; };
+  fetch('{{ url_for("tailscale_status") }}').then(r => r.json()).then(s => { $('tsOn').checked = s.enabled; $('tsNet').value = s.tailnet; if (s.connected) $('tsKey').placeholder = 'A token is saved. Paste a new one to replace it.'; });
+  $('tsOn').onchange = async () => { const r = await post('{{ url_for("tailscale_toggle") }}', {enabled: $('tsOn').checked}); if (!r.ok) { $('tsOn').checked = false; say(false, r.error); } else say(true, r.enabled ? 'Tailscale is on.' : 'Tailscale is off.'); };
+  $('tsTest').onclick = async () => { const r = await post('{{ url_for("tailscale_test") }}', {api_key: $('tsKey').value, tailnet: $('tsNet').value}); if (r.ok) { say(true, 'Connected. Found ' + r.count + ' device(s).'); $('tsSave').disabled = false; } else say(false, r.error); };
+  $('tsSave').onclick = async () => { const r = await post('{{ url_for("tailscale_save") }}', {api_key: $('tsKey').value, tailnet: $('tsNet').value, enabled: true}); if (r.ok) { say(true, 'Saved. Tailscale is on.'); $('tsOn').checked = true; $('tsKey').value = ''; $('tsSave').disabled = true; } else say(false, r.error); };
+})();
+</script>
+
+<!-- Reset all settings -->
+<div class="card mb-4 border-danger">
+    <div class="card-header text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Reset all settings</div>
+    <div class="card-body">
+        <p class="small mb-2">This puts UpdateIP back to a brand new installation. You are signed out, and you sign in again with <code>admin</code> / <code>admin</code>.</p>
+        <div class="row small mb-3">
+            <div class="col-md-6">
+                <b>Removed from UpdateIP</b>
+                <ul class="mb-0">
+                    <li>Cloudflare accounts, zones and the records list</li>
+                    <li>WAN interfaces and the update history</li>
+                    <li>UniFi, Nginx Proxy Manager, Tailscale and Telegram connections</li>
+                    <li>Timezone, name and intervals (back to defaults)</li>
+                    <li>Your password (back to admin / admin) and your BluexDEV licence link (you link the account again)</li>
+                </ul>
+            </div>
+            <div class="col-md-6">
+                <b>Stays as it is</b>
+                <ul class="mb-0">
+                    <li>Your BluexDEV account itself</li>
+                    <li>Everything inside Cloudflare, UniFi, Nginx Proxy Manager and Tailscale (DNS records, rules and devices are not touched)</li>
+                </ul>
+            </div>
+        </div>
+        <p class="small text-muted">Tip: download a backup first (Backup &amp; Restore below).</p>
+        <form method="post" action="{{ url_for('settings_reset') }}" id="resetForm">
+            <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="resetAck">
+                <label class="form-check-label small" for="resetAck">I understand that this cannot be undone</label>
+            </div>
+            <div class="input-group" style="max-width:420px">
+                <input type="text" class="form-control" name="confirm_text" id="resetText" placeholder="Type RESET to confirm" autocomplete="off">
+                <button type="submit" class="btn btn-danger" id="resetBtn" disabled>Reset all settings</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+(() => {
+  const ack = document.getElementById('resetAck'), txt = document.getElementById('resetText'), btn = document.getElementById('resetBtn');
+  const upd = () => { btn.disabled = !(ack.checked && txt.value === 'RESET'); };
+  ack.onchange = upd; txt.oninput = upd;
+})();
+</script>
+
 <!-- Backup & Restore -->
 <div class="card mb-4">
     <div class="card-header">

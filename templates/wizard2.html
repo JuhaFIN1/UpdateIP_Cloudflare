@@ -27,6 +27,7 @@
 <section class="wz" data-title="DNS records">
     <div class="card"><div class="card-body">
         <h4>DNS records</h4>
+        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> You choose which DNS records follow your public IP address, and which internet connection each record uses.</div><div><b>Why it is needed:</b> This is the main job of UpdateIP: when your IP changes, the ticked records are updated for you.</div><div><b>Required:</b> <span class="text-danger">Yes</span>. You can skip it only by ticking the box at the bottom of this step.</div></div>
         <p class="small">Tick the records that should always point to your current IP. If you have more than one internet connection, choose which one each record uses.</p>
         {% if not zones %}
             <div class="alert alert-warning">No records found. Connect Cloudflare in the Setup Wizard first.</div>
@@ -61,6 +62,7 @@
 <section class="wz" data-title="Outgoing traffic">
     <div class="card"><div class="card-body">
         <h4>Which devices leave through which connection?</h4>
+        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> Makes one device always use a chosen internet connection (for example always the second one).</div><div><b>Why it is needed:</b> Useful if you have two connections and want some devices to stay on one of them. You see the change before it is made.</div><div><b>Required:</b> <span class="text-success">No</span>. Press Next if you do not need it.</div></div>
         <div id="outList" class="mb-3"></div>
         <h6>Add a rule</h6>
         <div class="row g-2">
@@ -78,6 +80,7 @@
 <section class="wz" data-title="Incoming traffic">
     <div class="card"><div class="card-body">
         <h4>Which services arrive on which connection?</h4>
+        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> Opens a port on one internet connection and sends it to a device on your network (a port forward).</div><div><b>Why it is needed:</b> Needed only if something at home must be reachable from the internet, for example a web server. You see the change before it is made.</div><div><b>Required:</b> <span class="text-success">No</span>. Press Next if you do not need it. Opening a port makes that service visible to the internet.</div></div>
         <div id="inList" class="mb-3"></div>
         <h6>Open a port</h6>
         <div class="row g-2">
@@ -93,10 +96,63 @@
     </div></div>
 </section>
 
-<!-- 5 Test and save -->
+<!-- 5 Tailscale -->
+<section class="wz" data-title="Tailscale">
+    <div class="card"><div class="card-body">
+        <h4>Tailscale (optional)</h4>
+        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> Connects UpdateIP to your Tailscale account so it can list your Tailscale devices, point a name at one, and help your network reach the tailnet.</div><div><b>Why it is needed:</b> Only if you use Tailscale. UpdateIP reads the device list and changes nothing in Tailscale.</div><div><b>Required:</b> <span class="text-success">No</span>. Leave it off if you do not use Tailscale.</div></div>
+        <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="tsOn">
+            <label class="form-check-label" for="tsOn">Use Tailscale</label>
+        </div>
+        <div id="tsConnect" class="d-none mb-3">
+            <ol class="small">
+                <li>Open <a href="https://login.tailscale.com/admin/settings/keys" target="_blank" rel="noopener">login.tailscale.com/admin/settings/keys</a>, click <b>Generate access token</b> (at most 90 days) and copy it.</li>
+                <li>Paste it below, press <b>Test</b>, then <b>Save</b>.</li>
+            </ol>
+            <div class="row g-2">
+                <div class="col-md-3"><input id="tsNet" class="form-control" value="-" placeholder="Tailnet"></div>
+                <div class="col-md-9"><input id="tsKey" type="password" class="form-control" placeholder="Access token (tskey-api-...)" autocomplete="off"></div>
+            </div>
+            <div class="mt-2"><button class="btn btn-outline-primary" id="tsTest">Test</button> <button class="btn btn-primary" id="tsSave" disabled>Save</button></div>
+        </div>
+        <div id="tsMsg" class="mb-3"></div>
+        <div id="tsDevices"></div>
+        <div id="tsActions" class="d-none mt-4">
+            <h6>Point a name at a Tailscale device</h6>
+            <div class="alert alert-secondary py-2 small">
+                <div><b>What this does:</b> creates (or changes) a DNS record in Cloudflare that points to the Tailscale address of one of your devices, for example <code>nas.example.com</code>.</div>
+                <div><b>Why it is needed:</b> so you can open your device by a normal name while you are on Tailscale. Only devices on your tailnet can reach that address.</div>
+                <div><b>Required:</b> <span class="text-success">No</span>. You see the change before it is made.</div>
+            </div>
+            <div class="row g-2">
+                <div class="col-md-3"><select id="dZone" class="form-select"></select></div>
+                <div class="col-md-3"><input id="dName" class="form-control" placeholder="Name (e.g. nas)"></div>
+                <div class="col-md-4"><select id="dDev" class="form-select"></select></div>
+                <div class="col-md-2"><button class="btn btn-outline-primary w-100" id="dPrev">Preview</button></div>
+            </div>
+            <div id="dMsg" class="mt-2"></div>
+
+            <h6 class="mt-4">Reach your Tailscale devices from your whole network</h6>
+            <div class="alert alert-secondary py-2 small">
+                <div><b>What this does:</b> adds a route in UniFi so that traffic for Tailscale addresses (100.64.0.0/10) is sent to the device on your network that runs Tailscale.</div>
+                <div><b>Why it is needed:</b> so any device at home can reach your Tailscale devices without installing Tailscale on each one. That device must be a Tailscale subnet router (it must be allowed to forward traffic).</div>
+                <div><b>Required:</b> <span class="text-success">No</span>. You see the change before it is made.</div>
+            </div>
+            <div class="row g-2">
+                <div class="col-md-10"><select id="sDev" class="form-select"></select></div>
+                <div class="col-md-2"><button class="btn btn-outline-primary w-100" id="sPrev">Preview</button></div>
+            </div>
+            <div id="sMsg" class="mt-2"></div>
+        </div>
+    </div></div>
+</section>
+
+<!-- 6 Test and save -->
 <section class="wz" data-title="Test and save">
     <div class="card"><div class="card-body">
         <h4>Test</h4>
+        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> Shows what the DNS update would do right now, record by record. Nothing is changed by the test.</div><div><b>Why it is needed:</b> So you can check that the right records and addresses are used before you finish.</div><div><b>Required:</b> <span class="text-danger">Yes</span>. Press Run test once before Finish.</div></div>
         <p class="small">This shows what the DNS update would do right now. Nothing is changed by the test.</p>
         <button class="btn btn-outline-primary" id="testBtn">Run test</button>
         <div id="testOut" class="mt-3"></div>
@@ -116,7 +172,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const steps = [...document.querySelectorAll('.wz')];
-  let cur = 0, recSaved = false, tested = false, pending = {o: false, i: false}, data = null;
+  let cur = 0, recSaved = false, tested = false, pending = {o: false, i: false, s: false, d: false}, data = null, tsPending = false, tsDevs = [];
   const post = (u, b) => fetch(u, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b || {})}).then(r => r.json());
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const msg = (el, ok, t) => { el.innerHTML = '<div class="alert alert-' + (ok ? 'success' : 'danger') + ' py-2 mb-0">' + esc(t) + '</div>'; };
@@ -129,6 +185,7 @@
     $('back').style.visibility = i === 0 ? 'hidden' : 'visible';
     $('next').textContent = i === steps.length - 1 ? 'Finish' : (i === 0 ? 'Start' : 'Next');
     if ((i === 2 || i === 3) && !data) load();
+    if (i === 4) tsLoad();
   }
 
   // ---- UniFi data for steps 3 and 4
@@ -151,12 +208,12 @@
       (w.outgoing.length ? w.outgoing.map(o => '<div class="small ms-2">&bull; ' + esc(o.title) + ': ' + esc(o.who.join(', ')) + ' &rarr; ' + esc(o.what) + '</div>').join('') : '<div class="small ms-2 text-muted">No special rules</div>') + '</div>').join('') : '';
     $('inList').innerHTML = data.overview ? data.overview.wans.map(w => '<div class="mb-2"><b>' + esc(w.name) + '</b>' +
       (w.incoming.length ? w.incoming.map(i => '<div class="small ms-2">&bull; ' + esc(i.title) + ': ' + esc(i.proto) + ' port ' + esc(i.port) + ' &rarr; ' + esc(i.to) + '</div>').join('') : '<div class="small ms-2 text-muted">Nothing is opened</div>') + '</div>').join('') : '';
-    const mine = (data.own.routes.length + data.own.forwards.length) ?
-      '<div class="mt-2"><b class="small">Created by UpdateIP</b>' + data.own.routes.map(r => ownRow('route', r)).join('') + data.own.forwards.map(f => ownRow('forward', f)).join('') + '</div>' : '';
+    const mine = (data.own.routes.length + data.own.forwards.length + (data.own.statics || []).length) ?
+      '<div class="mt-2"><b class="small">Created by UpdateIP</b>' + data.own.routes.map(r => ownRow('route', r)).join('') + data.own.forwards.map(f => ownRow('forward', f)).join('') + (data.own.statics || []).map(f => ownRow('static', f)).join('') + '</div>' : '';
     $('outList').insertAdjacentHTML('beforeend', mine);
   }
   function ownRow(kind, x) {
-    return '<div class="small ms-2">' + (kind === 'route' ? 'Route: ' : 'Port: ') + esc(x.name) + ' <a href="#" class="text-danger" data-del="' + kind + ':' + esc(x.id) + '">remove</a></div>';
+    return '<div class="small ms-2">' + (kind === 'route' ? 'Route: ' : kind === 'static' ? 'Network route: ' : 'Port: ') + esc(x.name) + ' <a href="#" class="text-danger" data-del="' + kind + ':' + esc(x.id) + '">remove</a></div>';
   }
   document.addEventListener('click', async e => {
     const d = e.target.dataset && e.target.dataset.del; if (!d) return;
@@ -185,6 +242,21 @@
       };
     };
   }
+  changeFlow('static', $('sPrev'), $('sMsg'), () => ({ip: $('sDev').value}), 's');
+  // point a name at a Tailscale device: preview first, then an explicit confirm
+  $('dPrev').onclick = async () => {
+    const body = () => ({zone_id: $('dZone').value, name: $('dName').value, ip: $('dDev').value});
+    const r = await post('{{ url_for("tailscale_dns", step="preview") }}', body());
+    if (!r.ok) { msg($('dMsg'), false, r.error); return; }
+    pending.d = true;
+    $('dMsg').innerHTML = '<div class="alert alert-info py-2"><b>This will happen:</b> <span id="dTxt"></span></div><button class="btn btn-success btn-sm" id="dGo">Confirm and create</button> <button class="btn btn-outline-secondary btn-sm" id="dNo">Cancel</button>';
+    $('dTxt').textContent = r.preview;
+    $('dNo').onclick = () => { pending.d = false; $('dMsg').innerHTML = ''; };
+    $('dGo').onclick = async () => {
+      const c = await post('{{ url_for("tailscale_dns", step="create") }}', Object.assign(body(), {confirm: true}));
+      pending.d = false; msg($('dMsg'), c.ok, c.ok ? 'Done. The record was saved in Cloudflare.' : c.error);
+    };
+  };
   changeFlow('route', $('oPrev'), $('oMsg'), () => ({name: $('oName').value, mac: $('oDev').value, wan_id: $('oWan').value, kill_switch: $('oKill').checked}), 'o');
   changeFlow('forward', $('iPrev'), $('iMsg'), () => ({name: $('iName').value, wan_key: $('iWan').value, proto: $('iProto').value, ext_port: $('iExt').value, int_port: $('iInt').value, ip: $('iDev').value}), 'i');
 
@@ -210,12 +282,46 @@
     msg($('runMsg'), r.ok, r.ok ? (r.message || 'Done.') : r.error);
   };
 
+  // ---- Tailscale step (optional, read only)
+  const tsSay = (ok, t) => { $('tsMsg').innerHTML = '<div class="alert alert-' + (ok ? 'success' : 'danger') + ' py-2 mb-0"></div>'; $('tsMsg').firstChild.textContent = t; };
+  async function tsLoad() {
+    const s = await fetch('{{ url_for("tailscale_status") }}').then(r => r.json());
+    $('tsOn').checked = s.enabled; $('tsNet').value = s.tailnet;
+    $('tsConnect').classList.toggle('d-none', !(s.enabled && !s.connected) && !tsPending);
+    if (s.enabled && s.connected) {
+      const d = await fetch('{{ url_for("tailscale_devices") }}').then(r => r.json());
+      if (!d.ok) { tsSay(false, d.error); $('tsConnect').classList.remove('d-none'); return; }
+      $('tsDevices').innerHTML = d.devices.length ? '<div class="table-responsive"><table class="table table-sm"><thead><tr><th>Device</th><th>Tailscale address</th><th>Status</th><th>Notes</th></tr></thead><tbody>' +
+        d.devices.map(x => '<tr><td>' + esc(x.name) + '</td><td><code>' + esc(x.ip) + '</code></td><td>' + (x.online ? '<span class="badge bg-success">online</span>' : '<span class="badge bg-secondary">offline</span>') + '</td><td class="small">' +
+          (x.exit_node ? 'Exit node. ' : '') + (x.routes.length ? 'Shares networks: ' + esc(x.routes.join(', ')) : '') + '</td></tr>').join('') + '</tbody></table></div>' : '<p class="text-muted">No devices in the tailnet.</p>';
+      tsDevs = d.devices; await tsPanels();
+    } else { $('tsDevices').innerHTML = ''; $('tsActions').classList.add('d-none'); }
+  }
+  async function tsPanels() {
+    $('tsActions').classList.remove('d-none');
+    const z = await fetch('{{ url_for("tailscale_dns_zones") }}').then(r => r.json());
+    $('dZone').innerHTML = z.zones.length ? z.zones.map(x => '<option value="' + esc(x.id) + '">' + esc(x.name) + '</option>').join('') : '<option value="">No domains (connect Cloudflare)</option>';
+    $('dDev').innerHTML = '<option value="">Choose a Tailscale device...</option>' + tsDevs.filter(x => x.ip).map(x => '<option value="' + esc(x.ip) + '">' + esc(x.name) + ' (' + esc(x.ip) + ')</option>').join('');
+    if (!data) await load();
+    const lan = (data && data.clients ? data.clients : []).filter(x => x.ip);
+    $('sDev').innerHTML = data && data.error ? '<option value="">UniFi is not connected</option>' : '<option value="">Choose the device on your network that runs Tailscale...</option>' + lan.map(x => '<option value="' + esc(x.ip) + '">' + esc(x.name) + ' (' + esc(x.ip) + ')</option>').join('');
+  }
+  $('tsOn').onchange = async () => {
+    const r = await post('{{ url_for("tailscale_toggle") }}', {enabled: $('tsOn').checked});
+    if (!r.ok) { $('tsOn').checked = false; $('tsConnect').classList.remove('d-none'); tsPending = true; tsSay(false, r.error); return; }
+    tsPending = false; $('tsMsg').innerHTML = ''; tsLoad();
+  };
+  $('tsTest').onclick = async () => { const r = await post('{{ url_for("tailscale_test") }}', {api_key: $('tsKey').value, tailnet: $('tsNet').value}); if (r.ok) { tsSay(true, 'Connected. Found ' + r.count + ' device(s). Press Save.'); $('tsSave').disabled = false; } else tsSay(false, r.error); };
+  $('tsSave').onclick = async () => { const r = await post('{{ url_for("tailscale_save") }}', {api_key: $('tsKey').value, tailnet: $('tsNet').value, enabled: true}); if (r.ok) { tsPending = false; $('tsKey').value = ''; $('tsSave').disabled = true; tsSay(true, 'Saved. Tailscale is on.'); tsLoad(); } else tsSay(false, r.error); };
+
   $('back').onclick = () => show(Math.max(0, cur - 1));
   $('next').onclick = async () => {
     if (cur === 1 && !recSaved && !$('recSkip').checked) { msg($('recMsg'), false, 'Press Save first, or tick the box below to skip this step.'); return; }
     if (cur === 2 && pending.o) { msg($('oMsg'), false, 'Confirm or cancel the change above first.'); return; }
     if (cur === 3 && pending.i) { msg($('iMsg'), false, 'Confirm or cancel the change above first.'); return; }
-    if (cur === 4 && !tested) { msg($('testOut'), false, 'Run the test before finishing.'); return; }
+    if (cur === 4 && tsPending) { msg($('tsMsg'), false, 'Press Save for Tailscale, or switch it off.'); return; }
+    if (cur === 4 && (pending.s || pending.d)) { msg($('tsMsg'), false, 'Confirm or cancel the change above first.'); return; }
+    if (cur === 5 && !tested) { msg($('testOut'), false, 'Run the test before finishing.'); return; }
     if (cur === steps.length - 1) { const r = await post('{{ url_for("wizard2_finish") }}'); location.href = r.next; return; }
     show(cur + 1);
   };

@@ -30,6 +30,7 @@
 <section class="wz" data-title="Basics">
     <div class="card"><div class="card-body">
         <h4>Basics</h4>
+        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> Sets your time zone, the local name of this app and how often it checks.</div><div><b>Why it is needed:</b> So the times are correct and you can open the app at a short name. The defaults are fine.</div><div><b>Required:</b> <span class="text-danger">Yes</span>, but everything is already filled in: just press Next.</div></div>
         <div class="mb-3">
             <label class="form-label">Time zone</label>
             <select id="tz" class="form-select">
@@ -60,6 +61,7 @@
 <section class="wz" data-title="Cloudflare">
     <div class="card"><div class="card-body">
         <h4>Connect Cloudflare</h4>
+        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> Gives UpdateIP permission to change the DNS records in your Cloudflare account.</div><div><b>Why it is needed:</b> This is how your domain names are kept pointing to your current IP address.</div><div><b>Required:</b> <span class="text-danger">Yes</span>. You can skip it only by ticking the box at the bottom of this step.</div></div>
         {% if cf_count %}<div class="alert alert-success">A Cloudflare account is already connected. You can add another one or continue.</div>{% endif %}
         <p class="small mb-1">Create a token that may edit your DNS records. It takes about a minute:</p>
         <ol class="small">
@@ -95,6 +97,7 @@
 <section class="wz" data-title="Find devices">
     <div class="card"><div class="card-body">
         <h4>Find your devices</h4>
+        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> Searches your home network for your UniFi gateway and Nginx Proxy Manager, and fills in their addresses for you.</div><div><b>Why it is needed:</b> It saves you from looking up addresses. Nothing is changed on any device.</div><div><b>Required:</b> <span class="text-success">No</span>. You can skip the search and type the addresses in the next step.</div></div>
         <p class="small">These are the networks (subnets) this app can see. Remove the ones you do not want to search, or add others, for example a separate server network.</p>
         <div id="subnets" class="mb-2"></div>
         <div class="input-group mb-3" style="max-width:420px">
@@ -134,7 +137,7 @@
   const $ = id => document.getElementById(id);
   const steps = [...document.querySelectorAll('.wz')];
   let cur = 0;
-  const done = {cf: {{ 1 if cf_count else 0 }}, unifi: {{ 1 if unifi_url else 0 }}, npm: {{ 1 if npm_url else 0 }}};
+  const done = {cf: {{ 1 if cf_count else 0 }}, unifi: {{ 1 if unifi_url else 0 }}, npm: {{ 1 if npm_url else 0 }}, ts: {{ 1 if ts_connected else 0 }}};
   let subnets = [], devices = [], picked = new Set(), noUnifi = false;
   const post = (u, b) => fetch(u, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b || {})}).then(r => r.json());
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -217,11 +220,27 @@
     '<li>Click <b>Create</b>, then enter that username and password below.</li></ol>';
   const npmHelp = '<ol class="small"><li>Use the email and password you use to sign in to Nginx Proxy Manager.</li>' +
     '<li>The address is normally <code>http://ADDRESS:81</code>.</li></ol>';
+  const tsHelp = '<ol class="small"><li>Sign in at <a href="https://login.tailscale.com/admin/settings/keys" target="_blank" rel="noopener">login.tailscale.com/admin/settings/keys</a>.</li>' +
+    '<li>Under <b>Access tokens</b> click <b>Generate access token</b>, give it a description and choose how long it lasts (at most 90 days).</li>' +
+    '<li>Copy the token (it starts with <code>tskey-api-</code>) and paste it below. It is shown only once.</li>' +
+    '<li>Leave the tailnet as <code>-</code> unless you use several tailnets.</li></ol>' +
+    '<p class="small text-muted">UpdateIP only reads your device list. It changes nothing in Tailscale. When the token expires, create a new one here.</p>';
+  function tsCard() {
+    return '<div class="card mb-3" data-kind="tailscale" data-id="tailscale"><div class="card-header">Tailscale (optional)</div><div class="card-body">' +
+      '<div class="alert alert-secondary py-2 small"><div><b>What this does:</b> lets UpdateIP read the list of your Tailscale devices.</div><div><b>Why it is needed:</b> so you can point a name at a Tailscale device and reach your tailnet from your network.</div><div><b>Required:</b> <span class="text-success">No</span>.</div></div>' + tsHelp +
+      '<div class="row g-2"><div class="col-md-3"><input class="form-control f-url" value="-" placeholder="Tailnet"></div>' +
+      '<div class="col-md-9"><input type="password" class="form-control f-pass" placeholder="Access token (tskey-api-...)" autocomplete="off"></div></div>' +
+      '<input type="hidden" class="f-user" value="">' +
+      '<div class="mt-2"><button class="btn btn-outline-primary b-test">Test</button> <button class="btn btn-primary b-save" disabled>Save</button></div><div class="mt-2 c-msg"></div></div></div>';
+  }
   function card(kind, ip) {
+    if (kind === 'tailscale') return tsCard();
     const isU = kind === 'unifi';
     const url = isU ? 'https://' + ip : 'http://' + ip + ':81';
     const id = kind + (ip || '').replace(/\./g, '_');
-    return '<div class="card mb-3" data-kind="' + kind + '" data-id="' + id + '"><div class="card-header">' + (isU ? 'UniFi gateway' : 'Nginx Proxy Manager') + (ip ? ' &middot; ' + esc(ip) : '') + '</div><div class="card-body">' +
+    const what = isU ? '<div class="alert alert-secondary py-2 small"><div><b>What this does:</b> lets UpdateIP read your internet connections (WANs) and their current IP addresses from UniFi.</div><div><b>Why it is needed:</b> UpdateIP must know the IP address of each connection to keep your DNS records correct.</div><div><b>Required:</b> <span class="text-danger">Yes</span>, unless you do not use UniFi (tick the box at the bottom).</div></div>'
+      : '<div class="alert alert-secondary py-2 small"><div><b>What this does:</b> lets UpdateIP manage the proxy hosts in Nginx Proxy Manager.</div><div><b>Why it is needed:</b> only if you want to create and edit proxy hosts from UpdateIP.</div><div><b>Required:</b> <span class="text-success">No</span>.</div></div>';
+    return '<div class="card mb-3" data-kind="' + kind + '" data-id="' + id + '"><div class="card-header">' + (isU ? 'UniFi gateway' : 'Nginx Proxy Manager') + (ip ? ' &middot; ' + esc(ip) : '') + '</div><div class="card-body">' + what +
       (isU ? unifiHelp : npmHelp) + '<div class="row g-2">' +
       '<div class="col-md-6"><input class="form-control f-url" placeholder="Address" value="' + esc(url) + '"></div>' +
       '<div class="col-md-3"><input class="form-control f-user" placeholder="' + (isU ? 'Username' : 'Email') + '" autocomplete="off"></div>' +
@@ -237,6 +256,7 @@
     const hasU = sel.some(d => d.type === 'unifi'), hasN = sel.some(d => d.type === 'npm');
     if (!hasU) html += '<details class="mb-3"><summary>' + (done.unifi ? 'UniFi is connected. Connect another' : 'Connect a UniFi gateway by typing its address') + '</summary>' + card('unifi', '') + '</details>';
     if (!hasN) html += '<details class="mb-3"><summary>' + (done.npm ? 'Nginx Proxy Manager is connected. Connect another' : 'Connect Nginx Proxy Manager by typing its address') + '</summary>' + card('npm', '') + '</details>';
+    html += '<details class="mb-3"' + (done.ts ? '' : '') + '><summary>' + (done.ts ? 'Tailscale is connected. Change it' : 'Connect Tailscale (optional)') + '</summary>' + tsCard() + '</details>';
     $('connectArea').innerHTML = '<h4>Connect your devices</h4><p class="small text-muted">Each device is tested first. Nothing is saved until you press Save. Press Save on every device you fill in: you cannot continue with an unsaved device.</p><div id="connectMsg" class="mb-3"></div>' + html +
       '<div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="noUnifi" ' + (noUnifi ? 'checked' : '') + '><label class="form-check-label small" for="noUnifi">I do not use UniFi (UpdateIP then cannot read your WAN addresses automatically)</label></div>';
   }
@@ -245,11 +265,19 @@
     const isTest = e.target.classList.contains('b-test'), isSave = e.target.classList.contains('b-save');
     if (!isTest && !isSave) return;
     const kind = c.dataset.kind, m = c.querySelector('.c-msg');
-    const body = {url: c.querySelector('.f-url').value, password: c.querySelector('.f-pass').value, save: isSave};
+    let body = {url: c.querySelector('.f-url').value, password: c.querySelector('.f-pass').value, save: isSave};
     if (kind === 'unifi') { body.username = c.querySelector('.f-user').value; body.verify_ssl = c.querySelector('.f-ssl').checked; }
-    else body.email = c.querySelector('.f-user').value;
-    const r = await post(kind === 'unifi' ? '{{ url_for("wizard_unifi") }}' : '{{ url_for("wizard_npm") }}', body);
+    else if (kind === 'npm') body.email = c.querySelector('.f-user').value;
+    if (kind === 'tailscale') body = {api_key: c.querySelector('.f-pass').value, tailnet: c.querySelector('.f-url').value, enabled: true};
+    const endpoint = kind === 'unifi' ? '{{ url_for("wizard_unifi") }}' : kind === 'npm' ? '{{ url_for("wizard_npm") }}' :
+      (isSave ? '{{ url_for("tailscale_save") }}' : '{{ url_for("tailscale_test") }}');
+    const r = await post(endpoint, body);
     if (!r.ok) { msg(m, false, r.error); return; }
+    if (kind === 'tailscale') {
+      if (isTest) { msg(m, true, 'Connected. Found ' + r.count + ' device(s). Press Save to store it.'); c.querySelector('.b-save').disabled = false; }
+      else { msg(m, true, 'Saved. Tailscale is on.'); done.ts = 1; c.dataset.saved = '1'; c.querySelector('.f-pass').value = ''; c.querySelector('.b-save').disabled = true; }
+      return;
+    }
     if (isTest) { msg(m, true, 'Connected. Press Save to store it.'); c.querySelector('.b-save').disabled = false; }
     else { msg(m, true, 'Saved' + (kind === 'unifi' ? '. Found ' + (r.wans || 0) + ' internet connection(s).' : '.')); done[kind] = 1; c.dataset.saved = '1'; c.querySelector('.f-pass').value = ''; c.querySelector('.b-save').disabled = true; }
   };
@@ -259,7 +287,8 @@
     const row = (ok, t) => '<li>' + (ok ? '<i class="bi bi-check-circle text-success"></i> ' : '<i class="bi bi-dash-circle text-muted"></i> ') + t + '</li>';
     $('summary').innerHTML = row(true, 'Basics saved') + row(done.cf, done.cf ? 'Cloudflare connected' : 'Cloudflare not connected yet (Accounts page)') +
       row(done.unifi, done.unifi ? 'UniFi connected' : 'UniFi not connected (optional, WAN Interfaces page)') +
-      row(done.npm, done.npm ? 'Nginx Proxy Manager connected' : 'Nginx Proxy Manager not connected (optional, Proxy Manager page)');
+      row(done.npm, done.npm ? 'Nginx Proxy Manager connected' : 'Nginx Proxy Manager not connected (optional, Proxy Manager page)') +
+      row(done.ts, done.ts ? 'Tailscale connected' : 'Tailscale not connected (optional, Settings)');
   }
 
   $('back').onclick = () => show(Math.max(0, cur - 1));
