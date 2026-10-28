@@ -31,6 +31,7 @@ import unifi_policies
 import discovery
 import tailscale
 import policy_wizard
+import review
 
 from config import APP_VERSION
 import licensing as licence
@@ -1900,7 +1901,7 @@ _WIZARD_OPEN = {'wizard', 'wizard_subnets', 'wizard_scan', 'wizard_scan_status',
                 'logout', 'static', 'login', 'change_password', 'licence_page', 'licence_start',
                 'licence_poll', 'licence_unlink', 'tailscale_status', 'tailscale_test', 'tailscale_save',
                 'tailscale_toggle', 'tailscale_devices', 'tailscale_dns', 'tailscale_dns_zones', 'wizard2', 'wizard2_data', 'wizard2_records',
-                'wizard2_change', 'wizard2_delete', 'wizard2_nicknames', 'wizard2_test', 'wizard2_run_update', 'wizard2_finish'}
+                'wizard2_change', 'wizard2_delete', 'wizard2_nicknames', 'wizard2_review', 'wizard2_review_apply', 'wizard2_test', 'wizard2_run_update', 'wizard2_finish'}
 
 
 @app.before_request
@@ -2411,6 +2412,81 @@ def wizard2_nicknames():
     db.commit()
     db.close()
     return jsonify({'ok': True})
+
+
+def _review_inputs():
+    """Gather what Cloudflare (local copy), UpdateIP, Nginx Proxy Manager and UniFi say. Read only."""
+    db = get_db()
+    records = [dict(r) for r in db.execute(
+        "SELECT r.id, r.zone_id, r.account_id, r.name, r.content, r.proxied, r.auto_update, r.wan_id, a.api_token "
+        "FROM cf_records r JOIN cf_accounts a ON r.account_id = a.id WHERE r.type = 'A' ORDER BY r.name").fetchall()]
+    wans = [{'id': w['id'], 'label': (w['nickname'] or '').strip() or w['name'], 'key': (w['unifi_wan_name'] or '').lower(),
+             'ip': w['current_ip'] or ''} for w in db.execute('SELECT * FROM wan_interfaces ORDER BY name').fetchall()]
+    npm_row = db.execute('SELECT url FROM npm_settings WHERE id = 1').fetchone()
+    db.close()
+    npm_hosts = []
+    try:
+        npm = get_npm_client()
+        if npm:
+            npm_hosts = npm.list_proxy_hosts() or []
+    except Exception:
+        logger.warning('Review: could not read Nginx Proxy Manager')
+    forwards, client = [], _wiz2_client()
+    if client:
+        forwards = policy_wizard._get(client, policy_wizard._FORWARDS)
+    return records, wans, npm_hosts, review.private_host(npm_row['url'] if npm_row else ''), forwards, client
+
+
+@app.route('/wizard2/review', methods=['POST'])
+@login_required
+def wizard2_review():
+    choices = (request.get_json(silent=True) or {}).get('choices', {})
+    records, wans, npm_hosts, npm_ip, forwards, client = _review_inputs()
+    plan = review.build_plan(records, wans, npm_hosts, npm_ip, forwards, {str(k): v for k, v in choices.items()})
+    return jsonify({'ok': True, 'wans': wans, 'unifi': bool(client), 'npm': bool(npm_hosts) or bool(npm_ip), **plan})
+
+
+@app.route('/wizard2/review/apply', methods=['POST'])
+@login_required
+def wizard2_review_apply():
+    d = request.get_json(silent=True) or {}
+    if d.get('confirm') is not True:
+        return jsonify({'ok': False, 'error': 'Confirm the changes first.'})
+    records, wans, npm_hosts, npm_ip, forwards, client = _review_inputs()
+    plan = review.build_plan(records, wans, npm_hosts, npm_ip, forwards, {str(k): v for k, v in (d.get('choices') or {}).items()})
+    wanted = set(d.get('actions') or [])
+    by_rec = {str(r['id']): r for r in records}
+    results, touched_accounts = [], set()
+    order = {'unifi': 0, 'cloudflare': 1, 'local': 2}
+    for a in sorted([a for a in plan['actions'] if a['id'] in wanted], key=lambda a: order[a['kind']]):
+        ok, msg = False, ''
+        try:
+            if a['kind'] == 'unifi':
+                if not client:
+                    msg = 'UniFi is not connected.'
+                else:
+                    payload, _, err = policy_wizard.build_forward(client, 'Nginx Proxy Manager port %d' % a['port'], a['wan_key'],
+                                                                  'tcp', a['port'], a['ip'], a['port'])
+                    ok, msg = (False, err) if err else policy_wizard.create_forward(client, payload)
+            elif a['kind'] == 'cloudflare':
+                r = by_rec[a['record']]
+                ok, res = cf_update_record(r['api_token'], r['zone_id'], r['id'], r['name'], a['ip'],
+                                           proxied=bool(r['proxied']), record_type='A')
+                msg = '' if ok else str(res)
+                touched_accounts.add(r['account_id'])
+            else:
+                db = get_db()
+                db.execute('UPDATE cf_records SET auto_update = 1, wan_id = ? WHERE id = ?', (a['wan_id'], a['record']))
+                db.commit()
+                db.close()
+                ok = True
+        except Exception as e:
+            msg = 'Something went wrong (%s).' % type(e).__name__
+        results.append({'id': a['id'], 'title': a['title'], 'ok': bool(ok), 'error': msg or None})
+        logger.info('Review: %s -> %s', a['id'], 'ok' if ok else 'failed')
+    for acc in touched_accounts:
+        _sync_account(acc)
+    return jsonify({'ok': True, 'results': results})
 
 
 @app.route('/policies')
