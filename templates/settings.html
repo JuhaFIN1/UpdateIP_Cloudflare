@@ -174,37 +174,9 @@
 
 <!-- Tailscale -->
 <div class="card mb-4">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-diagram-2 me-1"></i>Tailscale (optional)</span>
-        <div class="form-check form-switch mb-0">
-            <input class="form-check-input" type="checkbox" id="tsOn">
-            <label class="form-check-label small" for="tsOn">On</label>
-        </div>
-    </div>
-    <div class="card-body">
-        <p class="text-muted small">Connect Tailscale to list your tailnet's devices in the wizards. UpdateIP only reads the device list. Create a token at <a href="https://login.tailscale.com/admin/settings/keys" target="_blank" rel="noopener">login.tailscale.com/admin/settings/keys</a> (Access tokens, at most 90 days).</p>
-        <div class="row g-2">
-            <div class="col-md-3"><input id="tsNet" class="form-control" value="-" placeholder="Tailnet"></div>
-            <div class="col-md-9"><input id="tsKey" type="password" class="form-control" placeholder="Access token (leave empty to keep the saved one)" autocomplete="off"></div>
-        </div>
-        <div class="mt-2">
-            <button class="btn btn-outline-primary" id="tsTest">Test</button>
-            <button class="btn btn-primary" id="tsSave" disabled>Save</button>
-        </div>
-        <div id="tsMsg" class="mt-2"></div>
-    </div>
+    <div class="card-header"><i class="bi bi-diagram-2 me-1"></i>Tailscale (optional)</div>
+    <div class="card-body">{% include '_tailscale.html' %}</div>
 </div>
-<script>
-(() => {
-  const $ = id => document.getElementById(id);
-  const post = (u, b) => fetch(u, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b || {})}).then(r => r.json());
-  const say = (ok, t) => { $('tsMsg').innerHTML = '<div class="alert alert-' + (ok ? 'success' : 'danger') + ' py-2 mb-0"></div>'; $('tsMsg').firstChild.textContent = t; };
-  fetch('{{ url_for("tailscale_status") }}').then(r => r.json()).then(s => { $('tsOn').checked = s.enabled; $('tsNet').value = s.tailnet; if (s.connected) $('tsKey').placeholder = 'A token is saved. Paste a new one to replace it.'; });
-  $('tsOn').onchange = async () => { const r = await post('{{ url_for("tailscale_toggle") }}', {enabled: $('tsOn').checked}); if (!r.ok) { $('tsOn').checked = false; say(false, r.error); } else say(true, r.enabled ? 'Tailscale is on.' : 'Tailscale is off.'); };
-  $('tsTest').onclick = async () => { const r = await post('{{ url_for("tailscale_test") }}', {api_key: $('tsKey').value, tailnet: $('tsNet').value}); if (r.ok) { say(true, 'Connected. Found ' + r.count + ' device(s).'); $('tsSave').disabled = false; } else say(false, r.error); };
-  $('tsSave').onclick = async () => { const r = await post('{{ url_for("tailscale_save") }}', {api_key: $('tsKey').value, tailnet: $('tsNet').value, enabled: true}); if (r.ok) { say(true, 'Saved. Tailscale is on.'); $('tsOn').checked = true; $('tsKey').value = ''; $('tsSave').disabled = true; } else say(false, r.error); };
-})();
-</script>
 
 <details class="mb-4"><summary class="h5 text-danger">Advanced: reset everything</summary>
 <div class="mt-3"></div>

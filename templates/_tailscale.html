@@ -1,0 +1,70 @@
+<div id="tsBox"></div>
+<script>
+window.TSBox = (() => {
+  const box = document.getElementById('tsBox');
+  const post = (u, b) => fetch(u, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b || {})}).then(r => r.json());
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let timer = null, onReady = null, loggingIn = false, readyFired = false, tokenOpen = false;
+
+  async function refresh() {
+    clearTimeout(timer);
+    const s = await fetch('{{ url_for("tailscale_local_status") }}').then(r => r.json());
+    const st = await fetch('{{ url_for("tailscale_status") }}').then(r => r.json());
+    draw(s, st);
+    const busy = s.installing.state === 'running' || (loggingIn && s.state !== 'Running');
+    if (busy) timer = setTimeout(refresh, 3000);
+    const ready = s.state === 'Running' || st.connected;
+    if (ready && !readyFired) {
+      readyFired = true; loggingIn = false;
+      if (!st.enabled) { await post('{{ url_for("tailscale_toggle") }}', {enabled: true}); st.enabled = true; draw(s, st); }
+      if (onReady) onReady(s);
+    }
+  }
+
+  function draw(s, st) {
+    let h = '';
+    if (s.installing.state === 'running') {
+      h = '<div class="alert alert-info d-flex align-items-center gap-2"><div class="spinner-border spinner-border-sm"></div> Installing Tailscale. This takes about a minute.</div>';
+    } else if (s.installing.state === 'error') {
+      h = '<div class="alert alert-danger">' + esc(s.installing.msg) + '</div><button class="btn btn-primary" id="tsbInstall">Try again</button>';
+    } else if (s.state === 'Running') {
+      h = '<div class="alert alert-success d-flex justify-content-between align-items-center"><span><i class="bi bi-check-circle-fill me-2"></i>Connected as <b>' + esc(s.self.name) + '</b> <code>' + esc(s.self.ip) + '</code></span></div>' +
+        '<div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="tsbOn"' + (st.enabled ? ' checked' : '') + '><label class="form-check-label" for="tsbOn">Use Tailscale in UpdateIP</label></div>';
+    } else if (st.connected) {
+      h = '<div class="alert alert-success"><i class="bi bi-check-circle-fill me-2"></i>Connected with an access token.</div>' +
+        '<div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="tsbOn"' + (st.enabled ? ' checked' : '') + '><label class="form-check-label" for="tsbOn">Use Tailscale in UpdateIP</label></div>';
+    } else if (!s.installed) {
+      h = '<button class="btn btn-primary" id="tsbInstall"><i class="bi bi-download me-1"></i>Set up Tailscale</button>' +
+        '<div class="small text-muted mt-2">Installs Tailscale here from Tailscale\'s official package source.</div>';
+    } else if (s.auth_url) {
+      h = '<a class="btn btn-primary btn-lg" href="' + esc(s.auth_url) + '" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right me-1"></i>Open the Tailscale login</a>' +
+        '<div class="small text-muted mt-2">Log in and approve, then come back. This page notices it by itself.</div>';
+    } else if (loggingIn) {
+      h = '<div class="alert alert-info d-flex align-items-center gap-2"><div class="spinner-border spinner-border-sm"></div> Getting your login link...</div>';
+    } else {
+      h = '<button class="btn btn-primary" id="tsbLogin"><i class="bi bi-box-arrow-in-right me-1"></i>Log in with Tailscale</button>';
+    }
+    h += '<details><summary>Advanced</summary><div class="mt-2">' +
+      (s.state === 'Running' ? '<button class="btn btn-outline-danger btn-sm mb-3" id="tsbLogout">Disconnect this container from Tailscale</button><br>' : '') +
+      '<a href="#" id="tsbTok" class="small">Use an access token instead</a>' +
+      '<div id="tsbTokBox" class="mt-2 ' + (tokenOpen ? '' : 'd-none') + '"><input id="tsbKey" type="password" class="form-control" placeholder="Access token (tskey-api-...)" autocomplete="off">' +
+      '<button class="btn btn-primary btn-sm mt-2" id="tsbTokGo">Connect</button> <span class="small text-muted">Get one at login.tailscale.com/admin/settings/keys (lasts at most 90 days).</span></div>' +
+      '<div id="tsbMsg" class="mt-2"></div></div></details>';
+    box.innerHTML = h;
+    const $ = id => document.getElementById(id);
+    if ($('tsbInstall')) $('tsbInstall').onclick = async () => { await post('{{ url_for("tailscale_local_install") }}', {confirm: true}); refresh(); };
+    if ($('tsbLogin')) $('tsbLogin').onclick = async () => { loggingIn = true; await post('{{ url_for("tailscale_local_login") }}'); refresh(); };
+    if ($('tsbOn')) $('tsbOn').onchange = async () => { const r = await post('{{ url_for("tailscale_toggle") }}', {enabled: $('tsbOn').checked}); if (onReady) onReady(s); if (!r.ok) $('tsbOn').checked = false; };
+    if ($('tsbLogout')) $('tsbLogout').onclick = async () => { if (confirm('Disconnect this container from Tailscale?')) { await post('{{ url_for("tailscale_local_logout") }}'); readyFired = false; refresh(); } };
+    if ($('tsbTok')) $('tsbTok').onclick = e => { e.preventDefault(); tokenOpen = true; $('tsbTokBox').classList.remove('d-none'); };
+    if ($('tsbTokGo')) $('tsbTokGo').onclick = async () => {
+      const body = {api_key: $('tsbKey').value, tailnet: '-', enabled: true};
+      const r = await post('{{ url_for("tailscale_save") }}', body);
+      $('tsbMsg').innerHTML = '<div class="alert alert-' + (r.ok ? 'success' : 'danger') + ' py-2 mb-0"></div>'; $('tsbMsg').firstChild.textContent = r.ok ? 'Connected.' : r.error;
+      if (r.ok) { $('tsbKey').value = ''; readyFired = false; refresh(); }
+    };
+  }
+  return {refresh, onReady: fn => { onReady = fn; }};
+})();
+document.addEventListener('DOMContentLoaded', () => TSBox.refresh());
+</script>

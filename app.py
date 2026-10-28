@@ -30,6 +30,7 @@ from unifi_api import get_unifi_client, clear_cached_client, UnifiClient
 import unifi_policies
 import discovery
 import tailscale
+import tailscale_local
 import policy_wizard
 import review
 
@@ -1923,7 +1924,8 @@ _WIZARD_OPEN = {'wizard', 'wizard_subnets', 'wizard_scan', 'wizard_scan_status',
                 'wizard_cloudflare', 'wizard_unifi', 'wizard_npm', 'wizard_finish', 'wizard_skip',
                 'logout', 'static', 'login', 'change_password', 'licence_page', 'licence_start',
                 'licence_poll', 'licence_unlink', 'tailscale_status', 'tailscale_test', 'tailscale_save',
-                'tailscale_toggle', 'tailscale_devices', 'tailscale_dns', 'tailscale_dns_zones', 'wizard2', 'wizard2_data', 'wizard2_records',
+                'tailscale_toggle', 'tailscale_devices', 'tailscale_dns', 'tailscale_dns_zones', 'tailscale_local_status',
+                'tailscale_local_install', 'tailscale_local_login', 'tailscale_local_logout', 'wizard2', 'wizard2_data', 'wizard2_records',
                 'wizard2_change', 'wizard2_delete', 'wizard2_nicknames', 'wizard2_review', 'wizard2_review_apply', 'wizard2_test', 'wizard2_run_update', 'wizard2_finish'}
 
 
@@ -2251,11 +2253,41 @@ def wizard2_finish():
 # ---------------------------------------------------------------------------
 # Tailscale (optional, read-only): connect with an access token, list the tailnet's devices
 # ---------------------------------------------------------------------------
+@app.route('/tailscale/local/status')
+@login_required
+def tailscale_local_status():
+    st = tailscale_local.status()
+    st['devices'] = len(st['devices'])
+    return jsonify(st)
+
+
+@app.route('/tailscale/local/install', methods=['POST'])
+@login_required
+def tailscale_local_install():
+    if (request.get_json(silent=True) or {}).get('confirm') is not True:
+        return jsonify({'ok': False, 'error': 'Confirm first.'})
+    return jsonify({'ok': tailscale_local.install()})
+
+
+@app.route('/tailscale/local/login', methods=['POST'])
+@login_required
+def tailscale_local_login():
+    return jsonify({'ok': tailscale_local.login()})
+
+
+@app.route('/tailscale/local/logout', methods=['POST'])
+@login_required
+def tailscale_local_logout():
+    set_setting('TAILSCALE_ENABLED', '')
+    return jsonify({'ok': tailscale_local.logout()})
+
+
 @app.route('/tailscale/status')
 @login_required
 def tailscale_status():
+    local = tailscale_local.status()['state'] == 'Running'
     return jsonify({'enabled': get_setting('TAILSCALE_ENABLED', '') == '1',
-                    'connected': bool(get_setting('TAILSCALE_API_KEY', '')),
+                    'connected': bool(get_setting('TAILSCALE_API_KEY', '')) or local,
                     'tailnet': get_setting('TAILSCALE_TAILNET', '-') or '-'})
 
 
@@ -2290,8 +2322,8 @@ def tailscale_save():
 @login_required
 def tailscale_toggle():
     on = bool((request.get_json(silent=True) or {}).get('enabled'))
-    if on and not get_setting('TAILSCALE_API_KEY', ''):
-        return jsonify({'ok': False, 'error': 'Connect Tailscale first (enter the access token).'})
+    if on and not get_setting('TAILSCALE_API_KEY', '') and tailscale_local.status()['state'] != 'Running':
+        return jsonify({'ok': False, 'error': 'Connect Tailscale first.'})
     set_setting('TAILSCALE_ENABLED', '1' if on else '')
     return jsonify({'ok': True, 'enabled': on})
 
@@ -2301,6 +2333,10 @@ def tailscale_toggle():
 def tailscale_devices():
     if get_setting('TAILSCALE_ENABLED', '') != '1':
         return jsonify({'ok': True, 'enabled': False, 'devices': []})
+    if not get_setting('TAILSCALE_API_KEY', ''):
+        st = tailscale_local.status()
+        if st['state'] == 'Running':
+            return jsonify({'ok': True, 'enabled': True, 'devices': st['devices']})
     devices, err = tailscale.list_devices(get_setting('TAILSCALE_API_KEY', ''), get_setting('TAILSCALE_TAILNET', '-'))
     if err:
         return jsonify({'ok': False, 'enabled': True, 'error': err})
