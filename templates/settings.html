@@ -1,0 +1,442 @@
+{% extends "base.html" %}
+{% block title %}Settings - UpdateIP{% endblock %}
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-gear me-2"></i>Settings</h2>
+
+<div class="row">
+    <!-- Change Password -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-shield-lock me-1"></i>Change Password
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="password">
+                    <div class="mb-3">
+                        <label class="form-label">Current Password</label>
+                        <input type="password" name="current_password" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">New Password</label>
+                        <input type="password" name="new_password" class="form-control" required minlength="4">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Confirm New Password</label>
+                        <input type="password" name="confirm_password" class="form-control" required minlength="4">
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Update Password
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- mDNS Hostname -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-broadcast me-1"></i>mDNS Hostname
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="mdns">
+                    <div class="mb-3">
+                        <label class="form-label">Local Network Hostname</label>
+                        <div class="input-group">
+                            <input type="text" name="mdns_hostname" class="form-control"
+                                value="{{ settings['mdns_hostname'] or 'updateip' }}"
+                                pattern="[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?" required maxlength="63">
+                            <span class="input-group-text">.local</span>
+                        </div>
+                        <div class="form-text">
+                            Access this app via <code>{{ settings['mdns_hostname'] or 'updateip' }}.local</code> on your
+                            network. Uses Avahi/mDNS.
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Save Hostname
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Timezone -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-clock me-1"></i>Timezone
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="timezone">
+                    <div class="mb-3">
+                        <label class="form-label">Display Timezone</label>
+                        <select name="timezone" class="form-select" id="timezoneSelect">
+                            {% for tz in timezones %}
+                            <option value="{{ tz }}" {% if tz==settings['timezone'] %}selected{% endif %}>{{ tz }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">
+                            All timestamps in the app will be displayed in this timezone.
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Current Time</label>
+                        <div class="form-control bg-dark" id="currentTime"
+                            style="font-family:monospace;font-size:1.1em;">—</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Save Timezone
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- BluexDEV (auth.selaa.fi) -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-broadcast-pin me-1"></i>BluexDEV (auth.selaa.fi)
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="auth_selaa_fi">
+                    <div class="mb-3">
+                        <label class="form-label">API Key</label>
+                        <input type="password" name="auth_selaa_api_key" class="form-control"
+                            value="{{ auth_selaa_api_key }}" autocomplete="off">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">API Secret</label>
+                        <input type="password" name="auth_selaa_api_secret" class="form-control"
+                            value="{{ auth_selaa_api_secret }}" autocomplete="off">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Base URL</label>
+                        <input type="text" name="auth_selaa_base_url" class="form-control"
+                            value="{{ auth_selaa_base_url }}" placeholder="https://auth.selaa.fi">
+                    </div>
+                    <div class="form-text mb-3">
+                        App slug <code>updateip</code>.
+                        {% if auth_selaa_heartbeat_last %}Last heartbeat: {{ auth_selaa_heartbeat_last }} UTC.{% else %}No heartbeat sent yet.{% endif %}
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Save
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Telegram -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-telegram me-1"></i>Telegram
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="telegram">
+                    <div class="mb-3">
+                        <label class="form-label">Bot Token</label>
+                        <input type="password" name="telegram_bot_token" class="form-control"
+                            value="{{ telegram_bot_token }}" autocomplete="off">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Chat ID</label>
+                        <input type="text" name="telegram_chat_id" class="form-control"
+                            value="{{ telegram_chat_id }}">
+                    </div>
+                    <div class="form-text mb-3">
+                        Critical errors are forwarded here once both fields are set. Bot creation/linking is done
+                        outside this app.
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Save
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Backup & Restore -->
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-archive me-1"></i>Backup &amp; Restore
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <h6><i class="bi bi-download me-1"></i>Backup</h6>
+                <p class="text-muted small mb-2">Download a full backup of all settings, accounts, zones, records, WAN
+                    interfaces, and proxy hosts.</p>
+                <form method="POST" action="{{ url_for('backup_download') }}">
+                    <button type="submit" class="btn btn-outline-primary">
+                        <i class="bi bi-download me-1"></i>Download Backup
+                    </button>
+                </form>
+            </div>
+            <div class="col-md-6">
+                <h6><i class="bi bi-upload me-1"></i>Restore</h6>
+                <p class="text-muted small mb-2">Upload a backup file to preview and selectively restore data.</p>
+                <form method="POST" action="{{ url_for('restore_preview') }}" enctype="multipart/form-data">
+                    <div class="input-group">
+                        <input type="file" name="backup_file" class="form-control form-control-sm" accept=".json"
+                            required>
+                        <button type="submit" class="btn btn-outline-warning">
+                            <i class="bi bi-upload me-1"></i>Preview
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Updates -->
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-arrow-repeat me-1"></i>Updates
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <!-- App Update -->
+            <div class="col-md-6">
+                <h6><i class="bi bi-github me-1"></i>App Update</h6>
+                <p class="text-muted small mb-2">Check GitHub for new UpdateIP versions and install updates.</p>
+                <div class="d-flex gap-2 mb-2">
+                    <button class="btn btn-outline-primary btn-sm" id="btnCheckUpdate" onclick="checkAppUpdate()">
+                        <i class="bi bi-search me-1"></i>Check for Updates
+                    </button>
+                    <button class="btn btn-warning btn-sm d-none" id="btnInstallUpdate" onclick="installAppUpdate()">
+                        <i class="bi bi-download me-1"></i>Install Update
+                    </button>
+                </div>
+                <div id="updateStatus" class="small mb-2"></div>
+                <pre id="updateOutput" class="bg-dark text-success p-2 rounded small d-none"
+                    style="max-height:300px;overflow-y:auto;font-size:0.8em;"></pre>
+            </div>
+            <!-- System Update -->
+            <div class="col-md-6">
+                <h6><i class="bi bi-pc-display me-1"></i>System Update</h6>
+                <p class="text-muted small mb-2">Run Debian package updates (apt update &amp; upgrade).</p>
+                <button class="btn btn-outline-warning btn-sm" id="btnSysUpdate" onclick="runSystemUpdate()">
+                    <i class="bi bi-arrow-up-circle me-1"></i>Run System Update
+                </button>
+                <pre id="sysUpdateOutput" class="bg-dark text-success p-2 rounded small d-none mt-2"
+                    style="max-height:300px;overflow-y:auto;font-size:0.8em;"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Info -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-info-circle me-1"></i>System Info</span>
+    </div>
+    <div class="card-body p-0">
+        <form method="POST" id="sysInfoForm">
+            <input type="hidden" name="action" value="sync_intervals">
+            <table class="table table-sm mb-0 align-middle">
+                <tr>
+                    <td class="fw-bold ps-3" style="width:200px"><i class="bi bi-router me-1"></i>UniFi Sync</td>
+                    <td>
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="number" name="unifi_interval" class="form-control form-control-sm"
+                                style="width:100px" value="{{ settings['unifi_interval'] }}" min="60" max="86400">
+                            <span class="text-muted small">sec ({{ (settings['unifi_interval'] / 60)|round(1) }}
+                                min)</span>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="fw-bold ps-3"><i class="bi bi-cloud me-1"></i>Cloudflare Sync</td>
+                    <td>
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="number" name="cloudflare_interval" class="form-control form-control-sm"
+                                style="width:100px" value="{{ settings['cloudflare_interval'] }}" min="60" max="86400">
+                            <span class="text-muted small">sec ({{ (settings['cloudflare_interval'] / 60)|round(1) }}
+                                min)</span>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="fw-bold ps-3"><i class="bi bi-hdd-rack me-1"></i>NPM Check</td>
+                    <td>
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="number" name="npm_interval" class="form-control form-control-sm"
+                                style="width:100px" value="{{ settings['npm_interval'] }}" min="60" max="86400">
+                            <span class="text-muted small">sec ({{ (settings['npm_interval'] / 60)|round(1) }}
+                                min)</span>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="fw-bold ps-3"><i class="bi bi-clock me-1"></i>Timezone</td>
+                    <td>{{ settings['timezone'] }}</td>
+                </tr>
+                {% for w in wans %}
+                <tr>
+                    <td class="fw-bold ps-3 text-nowrap">{{ w['name'] }}
+                        {% if w['detect_method'] == 'unifi' %}<span class="badge bg-info ms-1">UniFi</span>
+                        {% elif w['detect_method'] == 'static' %}<span
+                            class="badge bg-warning text-dark ms-1">Static</span>
+                        {% endif %}
+                    </td>
+                    <td><code>{{ w['current_ip'] or 'Not detected' }}</code></td>
+                </tr>
+                {% endfor %}
+                <tr>
+                    <td class="ps-3" colspan="2">
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            <i class="bi bi-check-lg me-1"></i>Save Intervals
+                        </button>
+                    </td>
+                </tr>
+            </table>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Live clock in configured timezone
+    const tz = '{{ settings["timezone"] }}';
+    function updateClock() {
+        const el = document.getElementById('currentTime');
+        if (!el) return;
+        try {
+            const now = new Date();
+            el.textContent = now.toLocaleString('en-GB', {
+                timeZone: tz,
+                weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+            });
+        } catch (e) {
+            el.textContent = new Date().toLocaleString();
+        }
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Make timezone select searchable via a text filter
+    const sel = document.getElementById('timezoneSelect');
+    if (sel) {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'form-control form-control-sm mb-2';
+        input.placeholder = 'Type to filter timezones...';
+        sel.parentNode.insertBefore(input, sel);
+        const opts = Array.from(sel.options);
+        input.addEventListener('input', function () {
+            const q = this.value.toLowerCase();
+            sel.innerHTML = '';
+            opts.filter(o => o.value.toLowerCase().includes(q))
+                .forEach(o => sel.appendChild(o));
+        });
+    }
+
+    // --- Updates ---
+    function checkAppUpdate() {
+        const btn = document.getElementById('btnCheckUpdate');
+        const status = document.getElementById('updateStatus');
+        const installBtn = document.getElementById('btnInstallUpdate');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Checking...';
+        status.innerHTML = '';
+        installBtn.classList.add('d-none');
+
+        fetch('{{ url_for("check_app_update") }}')
+            .then(r => r.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-search me-1"></i>Check for Updates';
+                if (data.error) {
+                    status.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>' + data.error + '</span>';
+                } else if (data.available) {
+                    status.innerHTML = '<span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>' +
+                        data.behind + ' new commit(s) available</span>';
+                    if (data.changes) {
+                        status.innerHTML += '<pre class="bg-dark text-light p-2 rounded mt-1 small mb-0" style="font-size:0.8em;">' +
+                            data.changes.replace(/</g, '&lt;') + '</pre>';
+                    }
+                    installBtn.classList.remove('d-none');
+                } else {
+                    status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Already up to date (v' +
+                        data.current_version + ')</span>';
+                }
+            })
+            .catch(() => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-search me-1"></i>Check for Updates';
+                status.innerHTML = '<span class="text-danger">Connection error</span>';
+            });
+    }
+
+    function installAppUpdate() {
+        const btn = document.getElementById('btnInstallUpdate');
+        const output = document.getElementById('updateOutput');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Updating...';
+        output.classList.remove('d-none');
+        output.textContent = '';
+
+        const es = new EventSource('{{ url_for("update_app") }}');
+        es.onmessage = function (e) {
+            if (e.data === '[DONE]') {
+                es.close();
+                btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Done';
+                setTimeout(() => location.reload(), 3000);
+                return;
+            }
+            output.textContent += e.data + '\n';
+            output.scrollTop = output.scrollHeight;
+        };
+        es.onerror = function () {
+            es.close();
+            output.textContent += '\nConnection lost — service may be restarting...\n';
+            btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Done';
+            setTimeout(() => location.reload(), 5000);
+        };
+    }
+
+    function runSystemUpdate() {
+        const btn = document.getElementById('btnSysUpdate');
+        const output = document.getElementById('sysUpdateOutput');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Updating...';
+        output.classList.remove('d-none');
+        output.textContent = '';
+
+        const es = new EventSource('{{ url_for("system_update") }}');
+        es.onmessage = function (e) {
+            if (e.data === '[DONE]') {
+                es.close();
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-arrow-up-circle me-1"></i>Run System Update';
+                return;
+            }
+            output.textContent += e.data + '\n';
+            output.scrollTop = output.scrollHeight;
+        };
+        es.onerror = function () {
+            es.close();
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-up-circle me-1"></i>Run System Update';
+            output.textContent += '\nConnection lost.\n';
+        };
+    }
+</script>
+{% endblock %}

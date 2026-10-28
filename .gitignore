@@ -1,0 +1,41 @@
+# Database (contains passwords, API tokens, NPM credentials)
+*.db
+*.db-wal
+*.db-shm
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Internal AI assistant instructions/notes (not for public repo)
+.github/
+.claude/
+CLAUDE.md
+*memory*.md
+
+# Licence state (contains the install token)
+license.json
+license.json.tmp
