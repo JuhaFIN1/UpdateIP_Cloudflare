@@ -97,7 +97,7 @@ def _get(url, **kw):
 
 
 def _identify(ip, open_ports):
-    """Return (type, label) for a host: 'unifi', 'npm' or ''. Read-only GET requests."""
+    """Return (type, label) for a host: 'unifi' (gateway/console), 'unifi_device', 'npm' or ''. Read-only GET requests."""
     if 81 in open_ports:
         r = _get('http://%s:81/api/' % ip)
         if r is not None and r.status_code == 200:
@@ -112,7 +112,12 @@ def _identify(ip, open_ports):
         if r is not None:
             body = (r.text or '')[:6000].lower()
             if 'unifi' in body or 'ubnt' in body or 'x-csrf-token' in {k.lower() for k in r.headers}:
-                return 'unifi', 'UniFi (OS console or gateway)'
+                # Only a UniFi OS console/gateway (UDM, UCG, Cloud Key) answers the Network API path with 401/200;
+                # cameras, switches and access points answer 404 or redirect.
+                h = _get('https://%s/proxy/network/api/s/default/stat/health' % ip)
+                if h is not None and h.status_code in (200, 401):
+                    return 'unifi', 'UniFi gateway / console'
+                return 'unifi_device', 'UniFi device (not a gateway)'
     if 8443 in open_ports:
         r = _get('https://%s:8443/' % ip)
         if r is not None and 'unifi' in (r.text or '').lower()[:6000]:

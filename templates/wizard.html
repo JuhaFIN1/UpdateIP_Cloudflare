@@ -61,11 +61,20 @@
     <div class="card"><div class="card-body">
         <h4>Connect Cloudflare</h4>
         {% if cf_count %}<div class="alert alert-success">A Cloudflare account is already connected. You can add another one or continue.</div>{% endif %}
+        <p class="small mb-1">Create a token that may edit your DNS records. It takes about a minute:</p>
         <ol class="small">
-            <li>Open <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">dash.cloudflare.com/profile/api-tokens</a> and choose <b>Create Token</b>.</li>
-            <li>Use the <b>Edit zone DNS</b> template, or add the permissions <b>Zone: DNS: Edit</b> and <b>Zone: Zone: Read</b>.</li>
-            <li>Copy the token and paste it here. You see it only once.</li>
+            <li>Sign in at <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">dash.cloudflare.com/profile/api-tokens</a> (your own profile, not an account page) and click <b>Create Token</b>.</li>
+            <li>Next to <b>Create Custom Token</b> click <b>Get started</b>. Give it a name, for example <code>UpdateIP</code>.</li>
+            <li>Under <b>Permissions</b> add two rows:
+                <ul class="mb-1">
+                    <li><b>Zone</b> &rarr; <b>DNS</b> &rarr; <b>Edit</b></li>
+                    <li>click <b>Add more</b>: <b>Zone</b> &rarr; <b>Zone</b> &rarr; <b>Read</b></li>
+                </ul></li>
+            <li>Under <b>Zone Resources</b> choose <b>Include</b> &rarr; <b>All zones</b> (or one specific zone, if you only want that one).</li>
+            <li>Leave the other fields as they are. Click <b>Continue to summary</b>, then <b>Create Token</b>.</li>
+            <li><b>Copy the token now.</b> Cloudflare shows it only once. Paste it below and press <b>Test</b>.</li>
         </ol>
+        <p class="small text-muted">It must be a token from your <b>profile</b> (My Profile &rarr; API Tokens). Tokens created under an account's own API tokens page are not accepted.</p>
         <div class="row g-2">
             <div class="col-md-4"><input id="cfName" class="form-control" placeholder="Name (for example Home)"></div>
             <div class="col-md-8"><input id="cfToken" type="password" class="form-control" placeholder="API token" autocomplete="off"></div>
@@ -75,6 +84,10 @@
             <button class="btn btn-primary" id="cfSave" disabled>Save</button>
         </div>
         <div id="cfMsg" class="mt-2"></div>
+        <div class="form-check mt-3">
+            <input class="form-check-input" type="checkbox" id="cfSkip">
+            <label class="form-check-label small" for="cfSkip">I do not want to connect Cloudflare now (UpdateIP cannot update DNS without it)</label>
+        </div>
     </div></div>
 </section>
 
@@ -121,7 +134,7 @@
   const steps = [...document.querySelectorAll('.wz')];
   let cur = 0;
   const done = {cf: {{ 1 if cf_count else 0 }}, unifi: {{ 1 if unifi_url else 0 }}, npm: {{ 1 if npm_url else 0 }}};
-  let subnets = [], devices = [], picked = new Set();
+  let subnets = [], devices = [], picked = new Set(), noUnifi = false;
   const post = (u, b) => fetch(u, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b || {})}).then(r => r.json());
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const msg = (el, ok, text) => { el.innerHTML = '<div class="alert alert-' + (ok ? 'success' : 'danger') + ' py-2 mb-0">' + esc(text) + '</div>'; };
@@ -181,7 +194,7 @@
       if (s.state === 'running') { setTimeout(tick, 1000); return; }
       $('scanBtn').disabled = false; $('scanProg').classList.add('d-none');
       if (s.state === 'error') { msg($('scanMsg'), false, s.message); return; }
-      devices = s.devices; picked = new Set(devices.filter(d => d.type).map(d => d.ip)); drawDevices();
+      devices = s.devices; picked = new Set(devices.filter(d => d.type === 'unifi' || d.type === 'npm').map(d => d.ip)); drawDevices();
     };
     tick();
   };
@@ -189,16 +202,18 @@
     if (!devices.length) { $('devices').innerHTML = '<div class="alert alert-warning">No devices found. Check the subnets above, or continue and type the addresses yourself.</div>'; return; }
     $('devices').innerHTML = '<p class="small mb-1">Found ' + devices.length + ' device(s). Tick the ones to connect (recognised devices are ticked).</p>' +
       '<div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th></th><th>Address</th><th>Name</th><th>What</th></tr></thead><tbody>' +
-      devices.map(d => '<tr><td><input type="checkbox" class="form-check-input" data-ip="' + esc(d.ip) + '" ' + (picked.has(d.ip) ? 'checked' : '') + ' ' + (d.type ? '' : 'disabled') + '></td>' +
+      devices.map(d => '<tr><td><input type="checkbox" class="form-check-input" data-ip="' + esc(d.ip) + '" ' + (picked.has(d.ip) ? 'checked' : '') + ' ' + (d.type === 'unifi' || d.type === 'npm' ? '' : 'disabled') + '></td>' +
         '<td><code>' + esc(d.ip) + '</code></td><td>' + esc(d.hostname || d.mac || '') + '</td><td>' +
-        (d.type ? '<span class="badge bg-primary">' + esc(d.label) + '</span>' : '<span class="text-muted small">Other device' + (d.ports.length ? ' (ports ' + d.ports.join(', ') + ')' : '') + '</span>') + '</td></tr>').join('') + '</tbody></table></div>';
+        (d.type === 'unifi_device' ? '<span class="badge bg-secondary">' + esc(d.label) + '</span>' : d.type ? '<span class="badge bg-primary">' + esc(d.label) + '</span>' : '<span class="text-muted small">Other device' + (d.ports.length ? ' (ports ' + d.ports.join(', ') + ')' : '') + '</span>') + '</td></tr>').join('') + '</tbody></table></div>';
   }
   $('devices').onchange = e => { const ip = e.target.dataset.ip; if (ip) { e.target.checked ? picked.add(ip) : picked.delete(ip); } };
 
   // --- step 5: connect devices
-  const unifiHelp = '<ol class="small"><li>Open your UniFi console in the browser.</li><li>Go to <b>Admins &amp; Users</b> and choose <b>Create New Admin</b>.</li>' +
-    '<li>Turn on <b>Restrict to local access only</b> and give it the <b>Admin</b> role. Choose a username and password (do not use your Ubiquiti account).</li>' +
-    '<li>Enter that username and password below.</li></ol>';
+  const unifiHelp = '<ol class="small"><li>Open your UniFi console in the browser and go to <b>Admins &amp; Users</b>, then <b>Create New</b>.</li>' +
+    '<li>Fill in <b>First Name</b>, <b>Last Name</b> and <b>Email</b>. Ignore <b>Show More</b> (Employee ID and Onboard Date are not needed).</li>' +
+    '<li>Tick <b>Admin</b>, then tick <b>Restrict to Local Access Only</b>. This makes <b>Username</b> and <b>Password</b> fields appear: choose them (not your Ubiquiti account).</li>' +
+    '<li>Under <b>Role</b> choose <b>Admin</b> (or Super Admin). Under <b>Assignments</b> keep <b>Network</b> ticked (required). <b>One-Click VPN</b> and <b>Protect</b> are optional.</li>' +
+    '<li>Click <b>Create</b>, then enter that username and password below.</li></ol>';
   const npmHelp = '<ol class="small"><li>Use the email and password you use to sign in to Nginx Proxy Manager.</li>' +
     '<li>The address is normally <code>http://ADDRESS:81</code>.</li></ol>';
   function card(kind, ip) {
@@ -221,7 +236,8 @@
     const hasU = sel.some(d => d.type === 'unifi'), hasN = sel.some(d => d.type === 'npm');
     if (!hasU) html += '<details class="mb-3"><summary>' + (done.unifi ? 'UniFi is connected. Connect another' : 'Connect a UniFi gateway by typing its address') + '</summary>' + card('unifi', '') + '</details>';
     if (!hasN) html += '<details class="mb-3"><summary>' + (done.npm ? 'Nginx Proxy Manager is connected. Connect another' : 'Connect Nginx Proxy Manager by typing its address') + '</summary>' + card('npm', '') + '</details>';
-    $('connectArea').innerHTML = '<h4>Connect your devices</h4><p class="small text-muted">Each device is tested first. Nothing is saved until you press Save. You can skip any of them.</p>' + html;
+    $('connectArea').innerHTML = '<h4>Connect your devices</h4><p class="small text-muted">Each device is tested first. Nothing is saved until you press Save. Press Save on every device you fill in: you cannot continue with an unsaved device.</p><div id="connectMsg" class="mb-3"></div>' + html +
+      '<div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="noUnifi" ' + (noUnifi ? 'checked' : '') + '><label class="form-check-label small" for="noUnifi">I do not use UniFi (UpdateIP then cannot read your WAN addresses automatically)</label></div>';
   }
   $('connectArea').onclick = async e => {
     const c = e.target.closest('.card[data-kind]'); if (!c) return;
@@ -234,7 +250,7 @@
     const r = await post(kind === 'unifi' ? '{{ url_for("wizard_unifi") }}' : '{{ url_for("wizard_npm") }}', body);
     if (!r.ok) { msg(m, false, r.error); return; }
     if (isTest) { msg(m, true, 'Connected. Press Save to store it.'); c.querySelector('.b-save').disabled = false; }
-    else { msg(m, true, 'Saved' + (kind === 'unifi' ? '. Found ' + (r.wans || 0) + ' internet connection(s).' : '.')); done[kind] = 1; c.querySelector('.f-pass').value = ''; c.querySelector('.b-save').disabled = true; }
+    else { msg(m, true, 'Saved' + (kind === 'unifi' ? '. Found ' + (r.wans || 0) + ' internet connection(s).' : '.')); done[kind] = 1; c.dataset.saved = '1'; c.querySelector('.f-pass').value = ''; c.querySelector('.b-save').disabled = true; }
   };
 
   // --- step 6
@@ -248,6 +264,17 @@
   $('back').onclick = () => show(Math.max(0, cur - 1));
   $('next').onclick = async () => {
     if (cur === 1 && !(await saveBasics())) return;
+    if (cur === 4) {
+      noUnifi = !!($('noUnifi') && $('noUnifi').checked);
+      const unsaved = [...document.querySelectorAll('#connectArea .card[data-kind]')].filter(c =>
+        (c.querySelector('.f-user').value || c.querySelector('.f-pass').value) && c.dataset.saved !== '1');
+      if (unsaved.length) { msg($('connectMsg'), false, 'You filled in ' + unsaved.length + ' device(s) but did not save them. Press Test and then Save on each one, or clear its fields.'); return; }
+      if (!done.unifi && !noUnifi) { msg($('connectMsg'), false, 'UniFi is not saved yet. Test and Save it, or tick the box at the bottom to skip it.'); return; }
+    }
+    if (cur === 2 && !done.cf && !$('cfSkip').checked) {
+      msg($('cfMsg'), false, 'Cloudflare is not saved yet. Press Test and then Save, or tick the box below to skip it.');
+      return;
+    }
     if (cur === steps.length - 1) { const r = await post('{{ url_for("wizard_finish") }}'); location.href = r.next; return; }
     show(cur + 1);
   };
