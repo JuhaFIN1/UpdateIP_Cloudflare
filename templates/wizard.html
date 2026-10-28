@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}Setup Wizard - UpdateIP{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-magic me-2"></i>Setup Wizard</h2>
+    <form method="post" action="{{ url_for('wizard_skip') }}">
+        <button class="btn btn-outline-secondary btn-sm">Skip for now</button>
+    </form>
+</div>
+
+<div class="progress mb-4" style="height:8px"><div id="bar" class="progress-bar" style="width:0%"></div></div>
+<p class="text-muted small" id="stepLabel"></p>
+
+<!-- 1 Welcome -->
+<section class="wz" data-title="Welcome">
+    <div class="card"><div class="card-body">
+        <h4>Let's set up UpdateIP</h4>
+        <p>This takes about five minutes. We will:</p>
+        <ol>
+            <li>choose your time zone and the local name of this app,</li>
+            <li>connect your Cloudflare account,</li>
+            <li>search your home network for your UniFi gateway and Nginx Proxy Manager,</li>
+            <li>connect the devices you choose, testing each one before anything is saved.</li>
+        </ol>
+        <p class="text-muted small mb-0">The search only looks at private addresses on your own network, and only when you press the button. Nothing is changed on your devices. You can run this wizard again later from the menu.</p>
+    </div></div>
+</section>
+
+<!-- 2 Basics -->
+<section class="wz" data-title="Basics">
+    <div class="card"><div class="card-body">
+        <h4>Basics</h4>
+        <div class="mb-3">
+            <label class="form-label">Time zone</label>
+            <select id="tz" class="form-select">
+                {% for tz in timezones %}<option value="{{ tz }}" {% if settings and settings['timezone'] == tz %}selected{% endif %}>{{ tz }}</option>{% endfor %}
+            </select>
+            <div class="form-text">All times in the app use this time zone.</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Local name</label>
+            <div class="input-group" style="max-width:360px">
+                <input id="host" class="form-control" value="{{ (settings['mdns_hostname'] if settings and settings['mdns_hostname'] else 'updateip') }}">
+                <span class="input-group-text">.local</span>
+            </div>
+            <div class="form-text">Open the app at this name on your home network, for example <code>updateip.local</code>.</div>
+        </div>
+        <details class="mb-2"><summary>How often to check (the defaults are fine)</summary>
+            <div class="row g-2 mt-1">
+                <div class="col-md-4"><label class="form-label small">UniFi and IP check (seconds)</label><input id="iu" class="form-control" value="{{ settings['unifi_interval'] if settings else 300 }}"></div>
+                <div class="col-md-4"><label class="form-label small">Cloudflare sync (seconds)</label><input id="ic" class="form-control" value="{{ settings['cloudflare_interval'] if settings else 3600 }}"></div>
+                <div class="col-md-4"><label class="form-label small">Proxy Manager sync (seconds)</label><input id="in" class="form-control" value="{{ settings['npm_interval'] if settings else 3600 }}"></div>
+            </div>
+        </details>
+        <div id="basicsMsg" class="mt-2"></div>
+    </div></div>
+</section>
+
+<!-- 3 Cloudflare -->
+<section class="wz" data-title="Cloudflare">
+    <div class="card"><div class="card-body">
+        <h4>Connect Cloudflare</h4>
+        {% if cf_count %}<div class="alert alert-success">A Cloudflare account is already connected. You can add another one or continue.</div>{% endif %}
+        <ol class="small">
+            <li>Open <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">dash.cloudflare.com/profile/api-tokens</a> and choose <b>Create Token</b>.</li>
+            <li>Use the <b>Edit zone DNS</b> template, or add the permissions <b>Zone: DNS: Edit</b> and <b>Zone: Zone: Read</b>.</li>
+            <li>Copy the token and paste it here. You see it only once.</li>
+        </ol>
+        <div class="row g-2">
+            <div class="col-md-4"><input id="cfName" class="form-control" placeholder="Name (for example Home)"></div>
+            <div class="col-md-8"><input id="cfToken" type="password" class="form-control" placeholder="API token" autocomplete="off"></div>
+        </div>
+        <div class="mt-2">
+            <button class="btn btn-outline-primary" id="cfTest">Test</button>
+            <button class="btn btn-primary" id="cfSave" disabled>Save</button>
+        </div>
+        <div id="cfMsg" class="mt-2"></div>
+    </div></div>
+</section>
+
+<!-- 4 Network search -->
+<section class="wz" data-title="Find devices">
+    <div class="card"><div class="card-body">
+        <h4>Find your devices</h4>
+        <p class="small">These are the networks (subnets) this app can see. Remove the ones you do not want to search, or add others, for example a separate server network.</p>
+        <div id="subnets" class="mb-2"></div>
+        <div class="input-group mb-3" style="max-width:420px">
+            <input id="subAdd" class="form-control" placeholder="Add subnet, e.g. 192.168.20.0/24">
+            <button class="btn btn-outline-secondary" id="subAddBtn">Add</button>
+        </div>
+        <button class="btn btn-primary" id="scanBtn"><i class="bi bi-search me-1"></i>Search network</button>
+        <div class="progress mt-3 d-none" id="scanProg" style="height:12px"><div class="progress-bar" id="scanBar" style="width:0%"></div></div>
+        <div id="scanMsg" class="mt-2 small"></div>
+        <div id="devices" class="mt-3"></div>
+        <p class="text-muted small mt-2 mb-0">Devices that do not answer on any common port may not show up. If yours is missing, you can type its address in the next step.</p>
+    </div></div>
+</section>
+
+<!-- 5 Connect devices -->
+<section class="wz" data-title="Connect devices">
+    <div id="connectArea"></div>
+</section>
+
+<!-- 6 Done -->
+<section class="wz" data-title="Done">
+    <div class="card"><div class="card-body">
+        <h4><i class="bi bi-check-circle text-success me-1"></i>All set</h4>
+        <ul id="summary"></ul>
+        <p class="small text-muted">Next: open <b>DNS Records</b> and turn on <b>Auto-Update</b> for the records you want to keep in sync. You can change everything later under Settings, and run this wizard again from the menu.</p>
+    </div></div>
+</section>
+
+<div class="d-flex justify-content-between mt-4">
+    <button class="btn btn-outline-secondary" id="back">Back</button>
+    <button class="btn btn-primary" id="next">Next</button>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const steps = [...document.querySelectorAll('.wz')];
+  let cur = 0;
+  const done = {cf: {{ 1 if cf_count else 0 }}, unifi: {{ 1 if unifi_url else 0 }}, npm: {{ 1 if npm_url else 0 }}};
+  let subnets = [], devices = [], picked = new Set();
+  const post = (u, b) => fetch(u, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b || {})}).then(r => r.json());
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const msg = (el, ok, text) => { el.innerHTML = '<div class="alert alert-' + (ok ? 'success' : 'danger') + ' py-2 mb-0">' + esc(text) + '</div>'; };
+
+  function show(i) {
+    cur = i;
+    steps.forEach((s, k) => s.classList.toggle('d-none', k !== i));
+    $('bar').style.width = Math.round(((i + 1) / steps.length) * 100) + '%';
+    $('stepLabel').textContent = 'Step ' + (i + 1) + ' of ' + steps.length + ': ' + steps[i].dataset.title;
+    $('back').style.visibility = i === 0 ? 'hidden' : 'visible';
+    $('next').textContent = i === steps.length - 1 ? 'Finish' : (i === 0 ? 'Start' : 'Next');
+    if (i === 3 && !subnets.length) loadSubnets();
+    if (i === 4) buildConnect();
+    if (i === 5) buildSummary();
+  }
+
+  // --- step 2: basics
+  async function saveBasics() {
+    const r = await post('{{ url_for("wizard_basics") }}', {timezone: $('tz').value, mdns_hostname: $('host').value,
+      unifi_interval: $('iu').value, cloudflare_interval: $('ic').value, npm_interval: $('in').value});
+    if (!r.ok) { msg($('basicsMsg'), false, r.error); return false; }
+    return true;
+  }
+
+  // --- step 3: Cloudflare
+  $('cfTest').onclick = async () => {
+    const r = await post('{{ url_for("wizard_cloudflare") }}', {name: $('cfName').value, api_token: $('cfToken').value});
+    msg($('cfMsg'), r.ok, r.ok ? 'The token works. Press Save to store it.' : r.error);
+    $('cfSave').disabled = !r.ok;
+  };
+  $('cfSave').onclick = async () => {
+    const r = await post('{{ url_for("wizard_cloudflare") }}', {name: $('cfName').value, api_token: $('cfToken').value, save: true});
+    msg($('cfMsg'), r.ok, r.ok ? 'Saved. Found ' + r.zones + ' zone(s).' : r.error);
+    if (r.ok) { done.cf = 1; $('cfToken').value = ''; $('cfSave').disabled = true; }
+  };
+
+  // --- step 4: network search
+  function drawSubnets() {
+    $('subnets').innerHTML = subnets.map((s, k) => '<span class="badge bg-secondary fs-6 me-1 mb-1">' + esc(s) +
+      ' <a href="#" data-rm="' + k + '" class="text-white ms-1 text-decoration-none">&times;</a></span>').join('') || '<span class="text-muted small">No networks found. Add one below.</span>';
+  }
+  async function loadSubnets() {
+    const r = await fetch('{{ url_for("wizard_subnets") }}').then(r => r.json());
+    subnets = r.subnets; drawSubnets();
+  }
+  $('subnets').onclick = e => { const k = e.target.dataset.rm; if (k !== undefined) { e.preventDefault(); subnets.splice(+k, 1); drawSubnets(); } };
+  $('subAddBtn').onclick = () => { const v = $('subAdd').value.trim(); if (v && !subnets.includes(v)) { subnets.push(v); drawSubnets(); } $('subAdd').value = ''; };
+  $('scanBtn').onclick = async () => {
+    $('devices').innerHTML = ''; $('scanMsg').textContent = '';
+    const r = await post('{{ url_for("wizard_scan") }}', {subnets});
+    if (!r.ok) { msg($('scanMsg'), false, r.error || 'A search is already running.'); return; }
+    if (r.rejected && r.rejected.length) $('scanMsg').textContent = 'Skipped (not a private subnet, or too large): ' + r.rejected.join(', ');
+    $('scanProg').classList.remove('d-none'); $('scanBtn').disabled = true;
+    const tick = async () => {
+      const s = await fetch('{{ url_for("wizard_scan_status") }}').then(r => r.json());
+      $('scanBar').style.width = (s.total ? Math.round(100 * s.done / s.total) : 0) + '%';
+      if (s.state === 'running') { setTimeout(tick, 1000); return; }
+      $('scanBtn').disabled = false; $('scanProg').classList.add('d-none');
+      if (s.state === 'error') { msg($('scanMsg'), false, s.message); return; }
+      devices = s.devices; picked = new Set(devices.filter(d => d.type).map(d => d.ip)); drawDevices();
+    };
+    tick();
+  };
+  function drawDevices() {
+    if (!devices.length) { $('devices').innerHTML = '<div class="alert alert-warning">No devices found. Check the subnets above, or continue and type the addresses yourself.</div>'; return; }
+    $('devices').innerHTML = '<p class="small mb-1">Found ' + devices.length + ' device(s). Tick the ones to connect (recognised devices are ticked).</p>' +
+      '<div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th></th><th>Address</th><th>Name</th><th>What</th></tr></thead><tbody>' +
+      devices.map(d => '<tr><td><input type="checkbox" class="form-check-input" data-ip="' + esc(d.ip) + '" ' + (picked.has(d.ip) ? 'checked' : '') + ' ' + (d.type ? '' : 'disabled') + '></td>' +
+        '<td><code>' + esc(d.ip) + '</code></td><td>' + esc(d.hostname || d.mac || '') + '</td><td>' +
+        (d.type ? '<span class="badge bg-primary">' + esc(d.label) + '</span>' : '<span class="text-muted small">Other device' + (d.ports.length ? ' (ports ' + d.ports.join(', ') + ')' : '') + '</span>') + '</td></tr>').join('') + '</tbody></table></div>';
+  }
+  $('devices').onchange = e => { const ip = e.target.dataset.ip; if (ip) { e.target.checked ? picked.add(ip) : picked.delete(ip); } };
+
+  // --- step 5: connect devices
+  const unifiHelp = '<ol class="small"><li>Open your UniFi console in the browser.</li><li>Go to <b>Admins &amp; Users</b> and choose <b>Create New Admin</b>.</li>' +
+    '<li>Turn on <b>Restrict to local access only</b> and give it the <b>Admin</b> role. Choose a username and password (do not use your Ubiquiti account).</li>' +
+    '<li>Enter that username and password below.</li></ol>';
+  const npmHelp = '<ol class="small"><li>Use the email and password you use to sign in to Nginx Proxy Manager.</li>' +
+    '<li>The address is normally <code>http://ADDRESS:81</code>.</li></ol>';
+  function card(kind, ip) {
+    const isU = kind === 'unifi';
+    const url = isU ? 'https://' + ip : 'http://' + ip + ':81';
+    const id = kind + (ip || '').replace(/\./g, '_');
+    return '<div class="card mb-3" data-kind="' + kind + '" data-id="' + id + '"><div class="card-header">' + (isU ? 'UniFi gateway' : 'Nginx Proxy Manager') + (ip ? ' &middot; ' + esc(ip) : '') + '</div><div class="card-body">' +
+      (isU ? unifiHelp : npmHelp) + '<div class="row g-2">' +
+      '<div class="col-md-6"><input class="form-control f-url" placeholder="Address" value="' + esc(url) + '"></div>' +
+      '<div class="col-md-3"><input class="form-control f-user" placeholder="' + (isU ? 'Username' : 'Email') + '" autocomplete="off"></div>' +
+      '<div class="col-md-3"><input type="password" class="form-control f-pass" placeholder="Password" autocomplete="off"></div></div>' +
+      (isU ? '<div class="form-check mt-2"><input type="checkbox" class="form-check-input f-ssl" id="ssl' + id + '"><label class="form-check-label small" for="ssl' + id + '">Verify the certificate (leave off for the default self-signed one)</label></div>' : '') +
+      '<div class="mt-2"><button class="btn btn-outline-primary b-test">Test</button> <button class="btn btn-primary b-save" disabled>Save</button></div><div class="mt-2 c-msg"></div></div></div>';
+  }
+  function buildConnect() {
+    const sel = devices.filter(d => picked.has(d.ip));
+    let html = '';
+    sel.filter(d => d.type === 'unifi').forEach(d => html += card('unifi', d.ip));
+    sel.filter(d => d.type === 'npm').forEach(d => html += card('npm', d.ip));
+    const hasU = sel.some(d => d.type === 'unifi'), hasN = sel.some(d => d.type === 'npm');
+    if (!hasU) html += '<details class="mb-3"><summary>' + (done.unifi ? 'UniFi is connected. Connect another' : 'Connect a UniFi gateway by typing its address') + '</summary>' + card('unifi', '') + '</details>';
+    if (!hasN) html += '<details class="mb-3"><summary>' + (done.npm ? 'Nginx Proxy Manager is connected. Connect another' : 'Connect Nginx Proxy Manager by typing its address') + '</summary>' + card('npm', '') + '</details>';
+    $('connectArea').innerHTML = '<h4>Connect your devices</h4><p class="small text-muted">Each device is tested first. Nothing is saved until you press Save. You can skip any of them.</p>' + html;
+  }
+  $('connectArea').onclick = async e => {
+    const c = e.target.closest('.card[data-kind]'); if (!c) return;
+    const isTest = e.target.classList.contains('b-test'), isSave = e.target.classList.contains('b-save');
+    if (!isTest && !isSave) return;
+    const kind = c.dataset.kind, m = c.querySelector('.c-msg');
+    const body = {url: c.querySelector('.f-url').value, password: c.querySelector('.f-pass').value, save: isSave};
+    if (kind === 'unifi') { body.username = c.querySelector('.f-user').value; body.verify_ssl = c.querySelector('.f-ssl').checked; }
+    else body.email = c.querySelector('.f-user').value;
+    const r = await post(kind === 'unifi' ? '{{ url_for("wizard_unifi") }}' : '{{ url_for("wizard_npm") }}', body);
+    if (!r.ok) { msg(m, false, r.error); return; }
+    if (isTest) { msg(m, true, 'Connected. Press Save to store it.'); c.querySelector('.b-save').disabled = false; }
+    else { msg(m, true, 'Saved' + (kind === 'unifi' ? '. Found ' + (r.wans || 0) + ' internet connection(s).' : '.')); done[kind] = 1; c.querySelector('.f-pass').value = ''; c.querySelector('.b-save').disabled = true; }
+  };
+
+  // --- step 6
+  function buildSummary() {
+    const row = (ok, t) => '<li>' + (ok ? '<i class="bi bi-check-circle text-success"></i> ' : '<i class="bi bi-dash-circle text-muted"></i> ') + t + '</li>';
+    $('summary').innerHTML = row(true, 'Basics saved') + row(done.cf, done.cf ? 'Cloudflare connected' : 'Cloudflare not connected yet (Accounts page)') +
+      row(done.unifi, done.unifi ? 'UniFi connected' : 'UniFi not connected (optional, WAN Interfaces page)') +
+      row(done.npm, done.npm ? 'Nginx Proxy Manager connected' : 'Nginx Proxy Manager not connected (optional, Proxy Manager page)');
+  }
+
+  $('back').onclick = () => show(Math.max(0, cur - 1));
+  $('next').onclick = async () => {
+    if (cur === 1 && !(await saveBasics())) return;
+    if (cur === steps.length - 1) { const r = await post('{{ url_for("wizard_finish") }}'); location.href = r.next; return; }
+    show(cur + 1);
+  };
+  show(0);
+})();
+</script>
+{% endblock %}

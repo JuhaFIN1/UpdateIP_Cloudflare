@@ -28,6 +28,7 @@ from updater import check_and_update_ip
 from npm_api import get_npm_client, NpmClient
 from unifi_api import get_unifi_client, clear_cached_client, UnifiClient
 import unifi_policies
+import discovery
 
 from config import APP_VERSION
 import licensing as licence
@@ -1251,7 +1252,7 @@ def update_app():
             return
 
         yield 'data: Pulling latest changes from GitHub...\n\n'
-        r = subprocess.run(['git', 'pull', 'origin', 'main'], cwd=APP_DIR,
+        r = subprocess.run(['git', 'pull', '--ff-only', 'origin', 'main'], cwd=APP_DIR,
                            capture_output=True, text=True, timeout=60)
         for line in (r.stdout + r.stderr).strip().splitlines():
             yield f'data: {line}\n\n'
@@ -1269,10 +1270,6 @@ def update_app():
         if r.returncode != 0:
             for line in r.stderr.strip().splitlines():
                 yield f'data: ERROR: {line}\n\n'
-
-        yield 'data: Switching back to dev branch...\n\n'
-        subprocess.run(['git', 'checkout', 'dev'], cwd=APP_DIR,
-                       capture_output=True, text=True, timeout=15)
 
         yield 'data: Restarting UpdateIP service...\n\n'
         subprocess.Popen(['systemctl', 'restart', 'updateip'],
@@ -1885,6 +1882,185 @@ def api_status():
 # ---------------------------------------------------------------------------
 # Routes: WAN Interfaces
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Setup wizard: basics, Cloudflare, network discovery, device connections (test first, then save)
+# ---------------------------------------------------------------------------
+_WIZARD_OPEN = {'wizard', 'wizard_subnets', 'wizard_scan', 'wizard_scan_status', 'wizard_basics',
+                'wizard_cloudflare', 'wizard_unifi', 'wizard_npm', 'wizard_finish', 'wizard_skip',
+                'logout', 'static', 'login', 'change_password', 'licence_page', 'licence_start',
+                'licence_poll', 'licence_unlink'}
+
+
+@app.before_request
+def wizard_gate():
+    """After the password change and the licence, new installations start in the setup wizard."""
+    if 'user_id' not in session or request.endpoint in _WIZARD_OPEN or session.get('must_change'):
+        return None
+    if get_setting('WIZARD_DONE', '') == '1':
+        return None
+    if not _licensed():
+        return None
+    return redirect(url_for('wizard'))
+
+
+@app.route('/wizard')
+@login_required
+def wizard():
+    db = get_db()
+    s = db.execute('SELECT * FROM settings WHERE id = 1').fetchone()
+    cf = db.execute('SELECT COUNT(*) AS n FROM cf_accounts').fetchone()['n']
+    unifi = db.execute('SELECT url FROM unifi_settings WHERE id = 1').fetchone()
+    npm = db.execute('SELECT url FROM npm_settings WHERE id = 1').fetchone()
+    db.close()
+    return render_template('wizard.html', timezones=sorted(available_timezones()),
+                           settings=s, cf_count=cf, unifi_url=(unifi['url'] if unifi else ''),
+                           npm_url=(npm['url'] if npm else ''))
+
+
+@app.route('/wizard/subnets')
+@login_required
+def wizard_subnets():
+    return jsonify({'subnets': discovery.local_subnets()})
+
+
+@app.route('/wizard/scan', methods=['POST'])
+@login_required
+def wizard_scan():
+    nets, bad = discovery.parse_subnets((request.get_json(silent=True) or {}).get('subnets', []))
+    if not nets:
+        return jsonify({'ok': False, 'rejected': bad,
+                        'error': 'Add at least one private subnet (for example 192.168.1.0/24, at most 1024 addresses).'})
+    return jsonify({'ok': discovery.scan.start(nets), 'rejected': bad})
+
+
+@app.route('/wizard/scan/status')
+@login_required
+def wizard_scan_status():
+    return jsonify(discovery.scan.status())
+
+
+@app.route('/wizard/basics', methods=['POST'])
+@login_required
+def wizard_basics():
+    d = request.get_json(silent=True) or {}
+    tz = str(d.get('timezone', 'UTC')).strip()
+    host = str(d.get('mdns_hostname', 'updateip')).strip().lower()
+    if tz not in available_timezones() and tz != 'UTC':
+        return jsonify({'ok': False, 'error': 'Invalid timezone.'})
+    if not re.match(r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$', host):
+        return jsonify({'ok': False, 'error': 'Invalid hostname. Use lowercase letters, numbers and hyphens.'})
+
+    def _clamp(val, default):
+        try:
+            return max(60, min(86400, int(val)))
+        except (ValueError, TypeError):
+            return default
+    db = get_db()
+    db.execute('UPDATE settings SET timezone = ?, mdns_hostname = ?, unifi_interval = ?, cloudflare_interval = ?, '
+               'npm_interval = ? WHERE id = 1',
+               (tz, host, _clamp(d.get('unifi_interval'), 300), _clamp(d.get('cloudflare_interval'), 3600),
+                _clamp(d.get('npm_interval'), 3600)))
+    db.commit()
+    db.close()
+    apply_mdns_hostname(host)
+    reschedule_job()
+    return jsonify({'ok': True})
+
+
+@app.route('/wizard/cloudflare', methods=['POST'])
+@login_required
+def wizard_cloudflare():
+    d = request.get_json(silent=True) or {}
+    name = str(d.get('name', '')).strip() or 'Cloudflare'
+    token = str(d.get('api_token', '')).strip()
+    if not token:
+        return jsonify({'ok': False, 'error': 'Paste your Cloudflare API token.'})
+    if not verify_token(token):
+        return jsonify({'ok': False, 'error': 'Cloudflare does not accept this token. Check the token and its permissions.'})
+    if not d.get('save'):
+        return jsonify({'ok': True, 'saved': False})
+    db = get_db()
+    db.execute('INSERT INTO cf_accounts (name, api_token) VALUES (?, ?)', (name, token))
+    db.commit()
+    account_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+    db.close()
+    _sync_account(account_id)
+    db = get_db()
+    zones = db.execute('SELECT COUNT(*) AS n FROM cf_zones WHERE account_id = ?', (account_id,)).fetchone()['n']
+    db.close()
+    return jsonify({'ok': True, 'saved': True, 'zones': zones})
+
+
+def _wizard_url(value):
+    value = str(value or '').strip().rstrip('/')
+    if not re.match(r'^https?://[^\s/]+', value):
+        return None
+    return value
+
+
+@app.route('/wizard/unifi', methods=['POST'])
+@login_required
+def wizard_unifi():
+    d = request.get_json(silent=True) or {}
+    url = _wizard_url(d.get('url'))
+    username = str(d.get('username', '')).strip()
+    password = str(d.get('password', ''))
+    site = str(d.get('site_name', 'default')).strip() or 'default'
+    verify = 1 if d.get('verify_ssl') else 0
+    if not url or not username or not password:
+        return jsonify({'ok': False, 'error': 'Fill in the address, username and password.'})
+    clear_cached_client()
+    if not UnifiClient(url, username, password, site=site, verify_ssl=bool(verify)).test_connection():
+        return jsonify({'ok': False, 'error': 'Could not sign in to UniFi. Check the address and the local admin account.'})
+    if not d.get('save'):
+        return jsonify({'ok': True, 'saved': False})
+    db = get_db()
+    db.execute('UPDATE unifi_settings SET url = ?, username = ?, password = ?, site_name = ?, verify_ssl = ? WHERE id = 1',
+               (url, username, password, site, verify))
+    db.commit()
+    db.close()
+    clear_cached_client()
+    try:
+        wans = _refresh_unifi_wans()
+    except Exception:
+        wans = 0
+    return jsonify({'ok': True, 'saved': True, 'wans': wans})
+
+
+@app.route('/wizard/npm', methods=['POST'])
+@login_required
+def wizard_npm():
+    d = request.get_json(silent=True) or {}
+    url = _wizard_url(d.get('url'))
+    email = str(d.get('email', '')).strip()
+    password = str(d.get('password', ''))
+    if not url or not email or not password:
+        return jsonify({'ok': False, 'error': 'Fill in the address, email and password.'})
+    if not NpmClient(url, email, password).test_connection():
+        return jsonify({'ok': False, 'error': 'Could not sign in to Nginx Proxy Manager. Check the address and login.'})
+    if not d.get('save'):
+        return jsonify({'ok': True, 'saved': False})
+    db = get_db()
+    db.execute('UPDATE npm_settings SET url = ?, email = ?, password = ? WHERE id = 1', (url, email, password))
+    db.commit()
+    db.close()
+    return jsonify({'ok': True, 'saved': True})
+
+
+@app.route('/wizard/finish', methods=['POST'])
+@login_required
+def wizard_finish():
+    set_setting('WIZARD_DONE', '1')
+    return jsonify({'ok': True, 'next': url_for('dashboard')})
+
+
+@app.route('/wizard/skip', methods=['POST'])
+@login_required
+def wizard_skip():
+    set_setting('WIZARD_DONE', '1')
+    return redirect(url_for('dashboard'))
+
 
 @app.route('/policies')
 @login_required

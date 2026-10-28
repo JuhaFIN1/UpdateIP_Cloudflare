@@ -102,6 +102,12 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link {% if request.endpoint == 'wizard' %}active{% endif %}"
+                        href="{{ url_for('wizard') }}">
+                        <i class="bi bi-magic me-2"></i>Setup Wizard
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link {% if request.endpoint == 'policies' %}active{% endif %}"
                         href="{{ url_for('policies') }}">
                         <i class="bi bi-signpost-split me-2"></i>WAN Policies
