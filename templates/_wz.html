@@ -1,0 +1,65 @@
+<style>
+  .wz-wrap { max-width: 980px; margin: 0 auto; }
+  .wz-steps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0 0 26px; flex-wrap: wrap; }
+  .wz-steps li { flex: 1; min-width: 78px; text-align: center; font-size: .82rem; color: #8b95a7; }
+  .wz-steps .dot { width: 36px; height: 36px; border-radius: 50%; margin: 0 auto 6px; display: flex; align-items: center; justify-content: center;
+                   background: #1a2358; color: #aab3d9; font-weight: 700; border: 2px solid rgba(129,140,248,.4); }
+  .wz-steps li.current { color: #fff; font-weight: 600; }
+  .wz-steps li.current .dot { background: linear-gradient(135deg, #4f8cff, #7c5cff); color: #fff; border-color: transparent; box-shadow: 0 0 0 4px rgba(79,140,255,.25); }
+  .wz-steps li.done .dot { background: #2f9e60; color: #fff; border-color: transparent; }
+  .wz-card { border: 0; border-radius: 16px; background: linear-gradient(135deg, #17205a, #1b1558); border: 1px solid rgba(129,140,248,.30); border-left: 6px solid #22d3ee; padding: 26px 28px; }
+  .wz-card.opt { border-left-color: #a78bfa; }
+  .wz-title { display: flex; align-items: center; gap: 12px; font-size: 1.5rem; font-weight: 600; margin-bottom: 1.2rem; }
+  .wz-title .bi { font-size: 1.9rem; background: linear-gradient(135deg, #22d3ee, #8b5cf6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  
+  .wz-tag { font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; border-radius: 20px; padding: 4px 10px; margin-left: auto; color: #fff; }
+  .wz-tag.req { background: #dc3545; }
+  .wz-tag.opt { background: #6f42c1; }
+  .wz-count { color: #aab3c2; font-size: .95rem; margin-bottom: 8px; }
+  .wz-count b { color: #fff; }
+  .wz-bar { height: 8px; border-radius: 8px; background: #1a2358; margin-bottom: 18px; overflow: hidden; }
+  .wz-bar > div { height: 100%; width: 0; background: linear-gradient(90deg, #3ddc84, #4f8cff); transition: width .3s; }
+  .wz-nav { display: flex; justify-content: space-between; margin-top: 22px; }
+  .wz-nav .btn { min-width: 120px; padding: .6rem 1.2rem; font-weight: 600; }
+  .wz-card details { margin-top: 1rem; border-top: 1px solid rgba(129,140,248,.3); padding-top: .8rem; }
+  .wz-card summary { cursor: pointer; color: #8fb4ff; font-size: .9rem; }
+  .wz-ok { color: #3ddc84; font-weight: 600; } .wz-bad { color: #ff6b6b; font-weight: 600; } .wz-na { color: #7d8797; }
+  .wz-dev { display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-radius: 12px; background: rgba(129,140,248,.12); margin-bottom: 6px; }
+  .wz-dev.hot { background: linear-gradient(90deg, rgba(34,211,238,.25), rgba(139,92,246,.25)); }
+</style>
+<script>
+window.WZ = (() => {
+  const $ = id => document.getElementById(id);
+  const post = (u, b) => fetch(u, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b || {})}).then(r => r.json());
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const say = (el, ok, t) => { el.innerHTML = '<div class="alert alert-' + (ok ? 'success' : 'danger') + ' py-2 mb-0"></div>'; el.firstChild.textContent = t; };
+  let steps = [], cur = 0, hooks = {};
+  function show(i) {
+    cur = i;
+    steps.forEach((s, k) => s.classList.toggle('d-none', k !== i));
+    [...$('wzSteps').children].forEach((li, k) => { li.className = k < i ? 'done' : k === i ? 'current' : ''; li.firstChild.innerHTML = k < i ? '&#10003;' : (k + 1); });
+    const total = steps.length;
+    if ($('wzCount')) $('wzCount').innerHTML = '<b>' + i + '</b> of ' + total + ' done &middot; <b>' + (total - i) + '</b> left';
+    if ($('wzBar')) $('wzBar').style.width = Math.round(100 * i / total) + '%';
+    $('wzBack').style.visibility = i === 0 ? 'hidden' : 'visible';
+    $('wzNext').innerHTML = i === steps.length - 1 ? (hooks.finishLabel || 'Finish') : 'Next <i class="bi bi-arrow-right"></i>';
+    if (hooks.onShow && hooks.onShow[i]) hooks.onShow[i]();
+    window.scrollTo(0, 0);
+  }
+  async function next() {
+    const g = hooks.guard && hooks.guard[cur];
+    if (g && await g()) return;
+    if (cur === steps.length - 1) { if (hooks.finish) hooks.finish(); return; }
+    show(cur + 1);
+  }
+  function init(h) {
+    hooks = h || {};
+    steps = [...document.querySelectorAll('.wz')];
+    $('wzSteps').innerHTML = steps.map((s, i) => '<li><div class="dot">' + (i + 1) + '</div>' + esc(s.dataset.title) + '</li>').join('');
+    $('wzBack').onclick = () => { if (cur > 0) show(cur - 1); };
+    $('wzNext').onclick = next;
+    show(0);
+  }
+  return {init, $, post, esc, say, show, get cur() { return cur; }};
+})();
+</script>

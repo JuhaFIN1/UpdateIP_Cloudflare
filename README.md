@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.00-4f8cff">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.12-4f8cff">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white">
   <img alt="Flask" src="https://img.shields.io/badge/Flask-3.x-green?logo=flask&logoColor=white">
   <img alt="Debian" src="https://img.shields.io/badge/Debian-13-a80030?logo=debian&logoColor=white">
@@ -91,7 +91,15 @@ bash setup.sh
 | **UI** | Dark Bootstrap 5 interface, mobile friendly, timezone setting |
 | **Security** | bcrypt passwords, session login, forced password change at the first sign-in |
 
-<p align="center"><img src="docs/dashboard.svg" alt="Dashboard illustration with example data" width="100%"></p>
+## Screenshots
+
+Example data. Nothing here is from a real installation.
+
+<p align="center"><img src="docs/shot-dashboard.jpg" alt="Dashboard" width="100%"></p>
+
+<p align="center"><img src="docs/shot-records.jpg" alt="DNS and WAN wizard: records" width="100%"></p>
+
+<p align="center"><img src="docs/shot-setup.jpg" alt="Setup wizard: find devices" width="100%"></p>
 
 ## Usage
 

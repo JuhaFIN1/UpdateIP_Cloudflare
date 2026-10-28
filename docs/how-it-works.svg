@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="330" viewBox="0 0 1000 330" font-family="Segoe UI,Helvetica,Arial,sans-serif" role="img" aria-label="How UpdateIP works">
   <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#4f8cff"/></marker></defs>
-  <rect width="1000" height="330" rx="16" fill="#1a1d21"/>
-  <g fill="#23272b" stroke="#3a4048" stroke-width="2">
+  <rect width="1000" height="330" rx="16" fill="#141b44"/>
+  <g fill="#1c2660" stroke="#5a66c8" stroke-width="2">
     <rect x="30" y="50" width="200" height="90" rx="12"/><rect x="30" y="190" width="200" height="90" rx="12"/>
     <rect x="370" y="90" width="260" height="150" rx="14" stroke="#4f8cff" stroke-width="3"/>
     <rect x="770" y="50" width="200" height="90" rx="12"/><rect x="770" y="190" width="200" height="90" rx="12"/>

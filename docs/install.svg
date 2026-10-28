@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="190" viewBox="0 0 1000 190" font-family="Segoe UI,Helvetica,Arial,sans-serif" role="img" aria-label="Install in four steps">
-  <rect width="1000" height="190" rx="16" fill="#1a1d21"/>
-  <g fill="#23272b" stroke="#3a4048" stroke-width="2">
+  <rect width="1000" height="190" rx="16" fill="#141b44"/>
+  <g fill="#1c2660" stroke="#5a66c8" stroke-width="2">
     <rect x="20" y="25" width="225" height="140" rx="12"/><rect x="265" y="25" width="225" height="140" rx="12"/>
     <rect x="510" y="25" width="225" height="140" rx="12"/><rect x="755" y="25" width="225" height="140" rx="12"/>
   </g>
