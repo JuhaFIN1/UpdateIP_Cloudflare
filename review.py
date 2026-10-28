@@ -29,7 +29,7 @@ def build_plan(records, wans, npm_hosts, npm_ip, forwards, choices=None):
     npm_hosts: Nginx Proxy Manager proxy hosts.  npm_ip: private address of the Nginx Proxy Manager server or ''.
     forwards: UniFi port forwards.  choices: {record id: WAN id chosen by the user}."""
     choices = choices or {}
-    by_id = {w['id']: w for w in wans}
+    by_id = {str(w['id']): w for w in wans}      # the page sends ids as text
     items, actions = [], {}
 
     def add_action(a):
@@ -48,7 +48,7 @@ def build_plan(records, wans, npm_hosts, npm_ip, forwards, choices=None):
             facts.append('Nginx Proxy Manager: no proxy host uses this name.')
 
         # which WAN? 1) the user's choice  2) the record's address is a WAN's address  3) ports 80/443 are forwarded on one WAN only
-        chosen = by_id.get(choices.get(rid)) if choices.get(rid) else None
+        chosen = by_id.get(str(choices.get(rid))) if choices.get(rid) else None
         suggestion, reason = None, ''
         if chosen is None:
             match = [w for w in wans if w['ip'] and w['ip'] == r['content']]
@@ -63,8 +63,8 @@ def build_plan(records, wans, npm_hosts, npm_ip, forwards, choices=None):
         wan = chosen or suggestion
         if wan is None and not r.get('wan_id'):
             reason = reason or 'It does not match any of your internet connections (its address %s is not one of them), so UpdateIP cannot tell which one it belongs to.' % (r['content'] or 'is empty')
-        if wan is None and r.get('wan_id') in by_id:
-            wan = by_id[r['wan_id']]
+        if wan is None and str(r.get('wan_id')) in by_id:
+            wan = by_id[str(r['wan_id'])]
             reason = 'Already set to %s.' % wan['label']
         if chosen:
             reason = 'You chose %s.' % chosen['label']
