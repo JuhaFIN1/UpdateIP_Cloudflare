@@ -4,7 +4,7 @@
 import os
 import secrets
 
-APP_VERSION = '1.16'
+APP_VERSION = '1.17'
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 

@@ -130,11 +130,8 @@ def diagnostics():
                         ('tailscaled log', ['journalctl', '-u', 'tailscaled', '--no-pager', '-n', '25'])):
         r = _run(args, timeout=20)
         text = ((r.stdout or '') + (r.stderr or '')).strip() if r else 'could not run'
-        parts.append('== %s ==
-%s' % (title, text[-2500:]))
-    return '
-
-'.join(parts)
+        parts.append('== %s ==' % title + chr(10) + text[-2500:])
+    return (chr(10) * 2).join(parts)
 
 
 def logout():
