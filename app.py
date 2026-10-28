@@ -2440,9 +2440,11 @@ def _review_inputs():
 @app.route('/wizard2/review', methods=['POST'])
 @login_required
 def wizard2_review():
-    choices = (request.get_json(silent=True) or {}).get('choices', {})
+    d = request.get_json(silent=True) or {}
+    choices = d.get('choices', {})
     records, wans, npm_hosts, npm_ip, forwards, client = _review_inputs()
-    plan = review.build_plan(records, wans, npm_hosts, npm_ip, forwards, {str(k): v for k, v in choices.items()})
+    plan = review.build_plan(records, wans, npm_hosts, npm_ip, forwards, {str(k): v for k, v in choices.items()},
+                             {str(k): v for k, v in (d.get('npm_targets') or {}).items()})
     return jsonify({'ok': True, 'wans': wans, 'unifi': bool(client), 'npm': bool(npm_hosts) or bool(npm_ip), **plan})
 
 
@@ -2453,11 +2455,12 @@ def wizard2_review_apply():
     if d.get('confirm') is not True:
         return jsonify({'ok': False, 'error': 'Confirm the changes first.'})
     records, wans, npm_hosts, npm_ip, forwards, client = _review_inputs()
-    plan = review.build_plan(records, wans, npm_hosts, npm_ip, forwards, {str(k): v for k, v in (d.get('choices') or {}).items()})
+    plan = review.build_plan(records, wans, npm_hosts, npm_ip, forwards, {str(k): v for k, v in (d.get('choices') or {}).items()},
+                             {str(k): v for k, v in (d.get('npm_targets') or {}).items()})
     wanted = set(d.get('actions') or [])
     by_rec = {str(r['id']): r for r in records}
     results, touched_accounts = [], set()
-    order = {'unifi': 0, 'cloudflare': 1, 'local': 2}
+    order = {'npm': 0, 'unifi': 1, 'cloudflare': 2, 'local': 3}
     for a in sorted([a for a in plan['actions'] if a['id'] in wanted], key=lambda a: order[a['kind']]):
         ok, msg = False, ''
         try:
@@ -2468,6 +2471,19 @@ def wizard2_review_apply():
                     payload, _, err = policy_wizard.build_forward(client, 'Nginx Proxy Manager port %d' % a['port'], a['wan_key'],
                                                                   'tcp', a['port'], a['ip'], a['port'])
                     ok, msg = (False, err) if err else policy_wizard.create_forward(client, payload)
+            elif a['kind'] == 'npm':
+                npm = get_npm_client()
+                if not npm:
+                    msg = 'Nginx Proxy Manager is not connected.'
+                else:
+                    t = a['target']
+                    data = {'domain_names': [by_rec[a['record']]['name']], 'forward_scheme': t['scheme'], 'forward_host': t['host'],
+                            'forward_port': t['port'], 'block_exploits': True, 'caching_enabled': False,
+                            'allow_websocket_upgrade': True, 'http2_support': False, 'hsts_enabled': False,
+                            'hsts_subdomains': False, 'ssl_forced': False, 'access_list_id': 0, 'certificate_id': 0,
+                            'meta': {'letsencrypt_agree': False, 'dns_challenge': False}, 'advanced_config': '', 'locations': []}
+                    ok, res = npm.create_proxy_host(data)
+                    msg = '' if ok else str(res)
             elif a['kind'] == 'cloudflare':
                 r = by_rec[a['record']]
                 ok, res = cf_update_record(r['api_token'], r['zone_id'], r['id'], r['name'], a['ip'],

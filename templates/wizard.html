@@ -30,7 +30,7 @@
 <section class="wz" data-title="Basics">
     <div class="card"><div class="card-body">
         <h4>Basics</h4>
-        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> Sets your time zone, the local name of this app and how often it checks.</div><div><b>Why it is needed:</b> So the times are correct and you can open the app at a short name. The defaults are fine.</div><div><b>Required:</b> <span class="text-danger">Yes</span>, but everything is already filled in: just press Next.</div></div>
+        <p class="small text-muted mb-3">Time zone and name for this app. The defaults are fine. <span class="badge bg-danger">Required</span></p>
         <div class="mb-3">
             <label class="form-label">Time zone</label>
             <select id="tz" class="form-select">
@@ -61,7 +61,7 @@
 <section class="wz" data-title="Cloudflare">
     <div class="card"><div class="card-body">
         <h4>Connect Cloudflare</h4>
-        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> Gives UpdateIP permission to change the DNS records in your Cloudflare account.</div><div><b>Why it is needed:</b> This is how your domain names are kept pointing to your current IP address.</div><div><b>Required:</b> <span class="text-danger">Yes</span>. You can skip it only by ticking the box at the bottom of this step.</div></div>
+        <p class="small text-muted mb-3">Lets UpdateIP change your DNS records when your IP changes. <span class="badge bg-danger">Required</span></p>
         {% if cf_count %}<div class="alert alert-success">A Cloudflare account is already connected. You can add another one or continue.</div>{% endif %}
         <p class="small mb-1">Create a token that may edit your DNS records. It takes about a minute:</p>
         <ol class="small">
@@ -97,7 +97,7 @@
 <section class="wz" data-title="Find devices">
     <div class="card"><div class="card-body">
         <h4>Find your devices</h4>
-        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> Searches your home network for your UniFi gateway and Nginx Proxy Manager, and fills in their addresses for you.</div><div><b>Why it is needed:</b> It saves you from looking up addresses. Nothing is changed on any device.</div><div><b>Required:</b> <span class="text-success">No</span>. You can skip the search and type the addresses in the next step.</div></div>
+        <p class="small text-muted mb-3">Finds your UniFi and Nginx Proxy Manager on the network. <span class="badge bg-secondary">Optional</span></p>
         <p class="small">These are the networks (subnets) this app can see. Remove the ones you do not want to search, or add others, for example a separate server network.</p>
         <div id="subnets" class="mb-2"></div>
         <div class="input-group mb-3" style="max-width:420px">
@@ -227,7 +227,7 @@
     '<p class="small text-muted">UpdateIP only reads your device list. It changes nothing in Tailscale. When the token expires, create a new one here.</p>';
   function tsCard() {
     return '<div class="card mb-3" data-kind="tailscale" data-id="tailscale"><div class="card-header">Tailscale (optional)</div><div class="card-body">' +
-      '<div class="alert alert-secondary py-2 small"><div><b>What this does:</b> lets UpdateIP read the list of your Tailscale devices.</div><div><b>Why it is needed:</b> so you can point a name at a Tailscale device and reach your tailnet from your network.</div><div><b>Required:</b> <span class="text-success">No</span>.</div></div>' + tsHelp +
+      '<p class="small text-muted mb-3">Lists your Tailscale devices. <span class="badge bg-secondary">Optional</span></p>' + tsHelp +
       '<div class="row g-2"><div class="col-md-3"><input class="form-control f-url" value="-" placeholder="Tailnet"></div>' +
       '<div class="col-md-9"><input type="password" class="form-control f-pass" placeholder="Access token (tskey-api-...)" autocomplete="off"></div></div>' +
       '<input type="hidden" class="f-user" value="">' +
@@ -238,8 +238,8 @@
     const isU = kind === 'unifi';
     const url = isU ? 'https://' + ip : 'http://' + ip + ':81';
     const id = kind + (ip || '').replace(/\./g, '_');
-    const what = isU ? '<div class="alert alert-secondary py-2 small"><div><b>What this does:</b> lets UpdateIP read your internet connections (WANs) and their current IP addresses from UniFi.</div><div><b>Why it is needed:</b> UpdateIP must know the IP address of each connection to keep your DNS records correct.</div><div><b>Required:</b> <span class="text-danger">Yes</span>, unless you do not use UniFi (tick the box at the bottom).</div></div>'
-      : '<div class="alert alert-secondary py-2 small"><div><b>What this does:</b> lets UpdateIP manage the proxy hosts in Nginx Proxy Manager.</div><div><b>Why it is needed:</b> only if you want to create and edit proxy hosts from UpdateIP.</div><div><b>Required:</b> <span class="text-success">No</span>.</div></div>';
+    const what = isU ? '<p class="small text-muted mb-3">Reads your internet connections and their IP addresses. <span class="badge bg-danger">Required</span></p>'
+      : '<p class="small text-muted mb-3">Lets you manage proxy hosts here. <span class="badge bg-secondary">Optional</span></p>';
     return '<div class="card mb-3" data-kind="' + kind + '" data-id="' + id + '"><div class="card-header">' + (isU ? 'UniFi gateway' : 'Nginx Proxy Manager') + (ip ? ' &middot; ' + esc(ip) : '') + '</div><div class="card-body">' + what +
       (isU ? unifiHelp : npmHelp) + '<div class="row g-2">' +
       '<div class="col-md-6"><input class="form-control f-url" placeholder="Address" value="' + esc(url) + '"></div>' +

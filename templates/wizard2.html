@@ -27,7 +27,7 @@
 <section class="wz" data-title="DNS records">
     <div class="card"><div class="card-body">
         <h4>DNS records</h4>
-        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> You choose which DNS records follow your public IP address, and which internet connection each record uses.</div><div><b>Why it is needed:</b> This is the main job of UpdateIP: when your IP changes, the ticked records are updated for you.</div><div><b>Required:</b> <span class="text-danger">Yes</span>. You can skip it only by ticking the box at the bottom of this step.</div></div>
+        <p class="small text-muted mb-3">Pick which records follow your IP, and through which connection. <span class="badge bg-danger">Required</span></p>
         {% if wans %}
         <div class="border rounded p-2 mb-3">
             <b class="small">Give your internet connections a nickname (optional)</b>
@@ -45,7 +45,7 @@
         <p class="small">Tick the records that should always point to your current IP. If you have more than one internet connection, choose which one each record uses.</p>
         <div id="reviewBox" class="mb-4">
             <h5>Review of your records</h5>
-            <p class="small text-muted">UpdateIP looked at Cloudflare, Nginx Proxy Manager and UniFi. Below, every record shows what was found, which internet connection it most likely belongs to and why. Change the connection if it is wrong, tick the changes you want, and apply them all at once.</p>
+            <p class="small text-muted">Green = OK. Red = needs a change. Pick the internet connection for each record.</p>
             <div id="reviewItems"><div class="text-muted small">Looking at your services...</div></div>
             <div id="reviewActions" class="mt-3"></div>
             <div id="reviewResult" class="mt-2"></div>
@@ -85,7 +85,7 @@
 <section class="wz" data-title="Outgoing traffic">
     <div class="card"><div class="card-body">
         <h4>Which devices leave through which connection?</h4>
-        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> Makes one device always use a chosen internet connection (for example always the second one).</div><div><b>Why it is needed:</b> Useful if you have two connections and want some devices to stay on one of them. You see the change before it is made.</div><div><b>Required:</b> <span class="text-success">No</span>. Press Next if you do not need it.</div></div>
+        <p class="small text-muted mb-3">Make a device always use one internet connection. <span class="badge bg-secondary">Optional</span></p>
         <div id="outList" class="mb-3"></div>
         <h6>Add a rule</h6>
         <div class="row g-2">
@@ -103,7 +103,7 @@
 <section class="wz" data-title="Incoming traffic">
     <div class="card"><div class="card-body">
         <h4>Which services arrive on which connection?</h4>
-        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> Opens a port on one internet connection and sends it to a device on your network (a port forward).</div><div><b>Why it is needed:</b> Needed only if something at home must be reachable from the internet, for example a web server. You see the change before it is made.</div><div><b>Required:</b> <span class="text-success">No</span>. Press Next if you do not need it. Opening a port makes that service visible to the internet.</div></div>
+        <p class="small text-muted mb-3">Open a port on one connection for a device at home. This makes it visible to the internet. <span class="badge bg-secondary">Optional</span></p>
         <div id="inList" class="mb-3"></div>
         <h6>Open a port</h6>
         <div class="row g-2">
@@ -123,7 +123,7 @@
 <section class="wz" data-title="Tailscale">
     <div class="card"><div class="card-body">
         <h4>Tailscale (optional)</h4>
-        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> Connects UpdateIP to your Tailscale account so it can list your Tailscale devices, point a name at one, and help your network reach the tailnet.</div><div><b>Why it is needed:</b> Only if you use Tailscale. UpdateIP reads the device list and changes nothing in Tailscale.</div><div><b>Required:</b> <span class="text-success">No</span>. Leave it off if you do not use Tailscale.</div></div>
+        <p class="small text-muted mb-3">Use Tailscale devices by name, and reach them from your network. <span class="badge bg-secondary">Optional</span></p>
         <div class="form-check form-switch mb-3">
             <input class="form-check-input" type="checkbox" id="tsOn">
             <label class="form-check-label" for="tsOn">Use Tailscale</label>
@@ -143,39 +143,14 @@
         <div id="tsDevices"></div>
         <div id="tsActions" class="d-none mt-4">
             <h6>Point a name at a Tailscale device</h6>
-            <div class="alert alert-secondary py-2 small">
-                <div><b>What this does:</b> creates (or changes) a DNS record in Cloudflare that points to the Tailscale address of one of your devices, for example <code>nas.example.com</code>.</div>
-                <div><b>Why it is needed:</b> so you can open your device by a normal name while you are on Tailscale. Only devices on your tailnet can reach that address.</div>
-                <div><b>Required:</b> <span class="text-success">No</span>. You see the change before it is made.</div>
-            </div>
-            <div class="row g-2">
-                <div class="col-md-3"><select id="dZone" class="form-select"></select></div>
-                <div class="col-md-3"><input id="dName" class="form-control" placeholder="Name (e.g. nas)"></div>
-                <div class="col-md-4"><select id="dDev" class="form-select"></select></div>
-                <div class="col-md-2"><button class="btn btn-outline-primary w-100" id="dPrev">Preview</button></div>
-            </div>
-            <div id="dMsg" class="mt-2"></div>
-
-            <h6 class="mt-4">Reach your Tailscale devices from your whole network</h6>
-            <div class="alert alert-secondary py-2 small">
-                <div><b>What this does:</b> adds a route in UniFi so that traffic for Tailscale addresses (100.64.0.0/10) is sent to the device on your network that runs Tailscale.</div>
-                <div><b>Why it is needed:</b> so any device at home can reach your Tailscale devices without installing Tailscale on each one. That device must be a Tailscale subnet router (it must be allowed to forward traffic).</div>
-                <div><b>Required:</b> <span class="text-success">No</span>. You see the change before it is made.</div>
-            </div>
-            <div class="row g-2">
-                <div class="col-md-10"><select id="sDev" class="form-select"></select></div>
-                <div class="col-md-2"><button class="btn btn-outline-primary w-100" id="sPrev">Preview</button></div>
-            </div>
-            <div id="sMsg" class="mt-2"></div>
-        </div>
-    </div></div>
+            <p class="small text-muted mb-3">Point a name (for example nas.example.com) at a Tailscale device. <span class="badge bg-secondary">Optional</span></p>
 </section>
 
 <!-- 6 Test and save -->
 <section class="wz" data-title="Test and save">
     <div class="card"><div class="card-body">
         <h4>Test</h4>
-        <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> Shows what the DNS update would do right now, record by record. Nothing is changed by the test.</div><div><b>Why it is needed:</b> So you can check that the right records and addresses are used before you finish.</div><div><b>Required:</b> <span class="text-danger">Yes</span>. Press Run test once before Finish.</div></div>
+        <p class="small text-muted mb-3">Shows what the update would do. Changes nothing. <span class="badge bg-danger">Required</span></p>
         <p class="small">This shows what the DNS update would do right now. Nothing is changed by the test.</p>
         <button class="btn btn-outline-primary" id="testBtn">Run test</button>
         <div id="testOut" class="mt-3"></div>
@@ -195,7 +170,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const steps = [...document.querySelectorAll('.wz')];
-  let reviewLoaded = false, reviewChoices = {}, reviewPlan = null;
+  let reviewLoaded = false, reviewChoices = {}, reviewPlan = null, npmTargets = {};
   let cur = 0, recSaved = false, tested = false, pending = {o: false, i: false, s: false, d: false}, data = null, tsPending = false, tsDevs = [];
   const post = (u, b) => fetch(u, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b || {})}).then(r => r.json());
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -300,31 +275,54 @@
   // ---- review: what was found, what is suggested and why, then apply everything at once
   async function loadReview() {
     reviewLoaded = true;
-    const r = await post('{{ url_for("wizard2_review") }}', {choices: reviewChoices});
+    const r = await post('{{ url_for("wizard2_review") }}', {choices: reviewChoices, npm_targets: npmTargets});
     reviewPlan = r; drawReview();
   }
   function drawReview() {
     const r = reviewPlan; if (!r || !r.ok) return;
-    const wanOpts = sel => '<option value="">Not decided</option>' + r.wans.map(w => '<option value="' + w.id + '"' + (String(sel) === String(w.id) ? ' selected' : '') + '>' + esc(w.label) + (w.ip ? ' (' + esc(w.ip) + ')' : '') + '</option>').join('');
-    $('reviewItems').innerHTML = r.items.length ? r.items.map(it => '<div class="border rounded p-2 mb-2"><div class="d-flex justify-content-between flex-wrap gap-2"><b><code>' + esc(it.name) + '</code></b>' +
-      '<select class="form-select form-select-sm w-auto rv-wan" data-id="' + esc(it.id) + '">' + wanOpts(it.wan_id) + '</select></div>' +
-      '<ul class="small mb-1 mt-2">' + it.facts.map(f => '<li>' + esc(f) + '</li>').join('') + '</ul>' +
-      '<div class="small ' + (it.known ? 'text-success' : 'text-warning') + '"><b>' + (it.known ? 'Suggestion: ' : 'Not sure: ') + '</b>' + esc(it.reason) + '</div></div>').join('') :
-      '<div class="alert alert-warning">No A records found. Connect Cloudflare in the Setup Wizard first.</div>';
-    document.querySelectorAll('.rv-wan').forEach(s => s.onchange = () => { reviewChoices[s.dataset.id] = s.value || null; if (!s.value) delete reviewChoices[s.dataset.id]; loadReview(); });
-    const kinds = {local: 'In UpdateIP', cloudflare: 'In Cloudflare', unifi: 'In UniFi'};
-    $('reviewActions').innerHTML = r.actions.length ? '<h6>Changes that will be made</h6><p class="small text-muted mb-2">Untick anything you do not want. Nothing happens until you press Apply.</p>' +
-      r.actions.map(a => '<div class="form-check mb-2"><input class="form-check-input rv-act" type="checkbox" id="act_' + esc(a.id) + '" data-id="' + esc(a.id) + '"' + (a.default ? ' checked' : '') + '>' +
-        '<label class="form-check-label" for="act_' + esc(a.id) + '"><span class="badge bg-secondary me-1">' + kinds[a.kind] + '</span><b>' + esc(a.title) + '</b><br><span class="small text-muted">Why: ' + esc(a.why) + '</span></label></div>').join('') +
+    const ok = t => '<span class="text-success">&#10003; ' + t + '</span>';
+    const bad = t => '<span class="text-danger">&#10007; ' + t + '</span>';
+    const na = t => '<span class="text-muted">' + (t || '&ndash;') + '</span>';
+    const wanOpts = sel => '<option value="">Choose...</option>' + r.wans.map(w => '<option value="' + w.id + '"' + (String(sel) === String(w.id) ? ' selected' : '') + '>' + esc(w.label) + '</option>').join('');
+    const rows = r.items.map(it => {
+      const s = it.status, id = esc(it.id);
+      const cf = s.cf.ok === null ? na('?') : s.cf.ok ? ok(esc(s.cf.now)) : bad(esc(s.cf.now) + ' &rarr; ' + esc(s.cf.to));
+      const t = npmTargets[it.id];
+      const npm = s.npm.found ? ok(esc(s.npm.target)) : bad('missing') + ' <a href="#" class="small rv-npm" data-id="' + id + '">' + (t ? 'edit' : 'add') + '</a>' +
+        (t ? '<div class="small text-muted">' + esc(t.scheme + '://' + t.host + ':' + t.port) + '</div>' : '');
+      const uni = s.unifi.ok === null ? na() : s.unifi.ok ? ok('80, 443') : bad('open ' + s.unifi.missing.join(', '));
+      const upd = !it.known ? na('?') : s.updateip ? ok('on') : bad('off');
+      return '<tr><td><code>' + esc(it.name) + '</code></td><td>' + cf + '</td><td>' + npm + '</td><td>' + uni + '</td>' +
+        '<td><select class="form-select form-select-sm rv-wan" data-id="' + id + '">' + wanOpts(it.wan_id) + '</select></td><td>' + upd + '</td></tr>' +
+        '<tr class="rv-form d-none" data-for="' + id + '"><td colspan="6"><div class="row g-2 align-items-center"><div class="col-auto small">Send visitors to</div>' +
+        '<div class="col-auto"><select class="form-select form-select-sm f-scheme"><option>http</option><option>https</option></select></div>' +
+        '<div class="col-md-3"><input class="form-control form-control-sm f-host" placeholder="192.168.1.20"></div>' +
+        '<div class="col-md-2"><input class="form-control form-control-sm f-port" placeholder="Port" value="80"></div>' +
+        '<div class="col-auto"><button class="btn btn-sm btn-primary rv-npm-ok">OK</button></div></div></td></tr>';
+    }).join('');
+    $('reviewItems').innerHTML = r.items.length ?
+      '<div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Record</th><th>Cloudflare</th><th>Nginx</th><th>UniFi ports</th><th>Connection</th><th>UpdateIP</th></tr></thead><tbody>' + rows + '</tbody></table></div>' :
+      '<div class="alert alert-warning">No records found. Connect Cloudflare in the Setup Wizard first.</div>';
+    document.querySelectorAll('.rv-wan').forEach(sel => sel.onchange = () => { if (sel.value) reviewChoices[sel.dataset.id] = sel.value; else delete reviewChoices[sel.dataset.id]; loadReview(); });
+    document.querySelectorAll('.rv-npm').forEach(a => a.onclick = e => { e.preventDefault(); document.querySelector('.rv-form[data-for="' + a.dataset.id + '"]').classList.toggle('d-none'); });
+    document.querySelectorAll('.rv-npm-ok').forEach(btn => btn.onclick = () => {
+      const tr = btn.closest('tr'), id = tr.dataset.for;
+      npmTargets[id] = {scheme: tr.querySelector('.f-scheme').value, host: tr.querySelector('.f-host').value.trim(), port: tr.querySelector('.f-port').value.trim()};
+      loadReview();
+    });
+    const kinds = {local: 'UpdateIP', cloudflare: 'Cloudflare', unifi: 'UniFi', npm: 'Nginx'};
+    $('reviewActions').innerHTML = r.actions.length ? '<h6>Changes</h6>' +
+      r.actions.map(a => '<div class="form-check mb-1"><input class="form-check-input rv-act" type="checkbox" id="act_' + esc(a.id) + '" data-id="' + esc(a.id) + '"' + (a.default ? ' checked' : '') + '>' +
+        '<label class="form-check-label" for="act_' + esc(a.id) + '" title="' + esc(a.why) + '"><span class="badge bg-secondary me-1">' + kinds[a.kind] + '</span>' + esc(a.title.replace(/^[A-Za-z ]+: /, '')) + '</label></div>').join('') +
       '<button class="btn btn-warning mt-2" id="rvApply">Apply the ticked changes</button>' :
-      (r.items.length ? '<div class="alert alert-success py-2 mb-0">Everything already agrees. No changes are needed.</div>' : '');
+      (r.items.length ? '<div class="alert alert-success py-2 mb-0">Everything is OK. No changes needed.</div>' : '');
     if ($('rvApply')) $('rvApply').onclick = applyReview;
   }
   async function applyReview() {
     const ids = [...document.querySelectorAll('.rv-act:checked')].map(c => c.dataset.id);
     if (!ids.length) { msg($('reviewResult'), false, 'Tick at least one change, or skip this step.'); return; }
     $('rvApply').disabled = true;
-    const r = await post('{{ url_for("wizard2_review_apply") }}', {choices: reviewChoices, actions: ids, confirm: true});
+    const r = await post('{{ url_for("wizard2_review_apply") }}', {choices: reviewChoices, npm_targets: npmTargets, actions: ids, confirm: true});
     if (!r.ok) { msg($('reviewResult'), false, r.error); $('rvApply').disabled = false; return; }
     $('reviewResult').innerHTML = '<ul class="list-unstyled small">' + r.results.map(x => '<li><i class="bi bi-' + (x.ok ? 'check-circle text-success' : 'x-circle text-danger') + '"></i> ' + esc(x.title) + (x.ok ? '' : ' &mdash; ' + esc(x.error || 'failed')) + '</li>').join('') + '</ul>';
     recSaved = r.results.some(x => x.ok); reviewLoaded = false; data = null; await loadReview();

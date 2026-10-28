@@ -23,12 +23,13 @@ def _fwd(forwards, key, port):
     return None
 
 
-def build_plan(records, wans, npm_hosts, npm_ip, forwards, choices=None):
+def build_plan(records, wans, npm_hosts, npm_ip, forwards, choices=None, npm_targets=None):
     """records: [{id,name,content,proxied,auto_update,wan_id}]
     wans: [{id,label,key,ip}]  (id = UpdateIP's WAN id, key = UniFi interface 'wan'/'wan2', ip = current address)
     npm_hosts: Nginx Proxy Manager proxy hosts.  npm_ip: private address of the Nginx Proxy Manager server or ''.
     forwards: UniFi port forwards.  choices: {record id: WAN id chosen by the user}."""
     choices = choices or {}
+    npm_targets = npm_targets or {}
     by_id = {str(w['id']): w for w in wans}      # the page sends ids as text
     items, actions = [], {}
 
@@ -94,10 +95,46 @@ def build_plan(records, wans, npm_hosts, npm_ip, forwards, choices=None):
             if host and wan['key']:
                 f80 = _fwd(forwards, wan['key'], 80)
                 facts.append('UniFi: port 80 on %s %s.' % (wan['label'], ('goes to %s' % f80.get('fwd')) if f80 else 'is not forwarded'))
-        items.append({'id': rid, 'name': r['name'], 'content': r['content'], 'facts': facts,
+        # Nginx Proxy Manager: no proxy host yet, and the user typed where it should point
+        target = npm_targets.get(rid)
+        if not host and target and wan is not None or (not host and target):
+            t = _clean_target(target)
+            if t:
+                ids.append(add_action({
+                    'id': 'npm:%s' % rid, 'kind': 'npm', 'record': rid, 'target': t, 'default': True,
+                    'title': 'Nginx: add %s, sending visitors to %s://%s:%s' % (r['name'], t['scheme'], t['host'], t['port']),
+                    'why': 'There is no proxy host for this name, so visitors would not reach your service.'}))
+        # simple status for the table: True = fine, False = needs a change, None = not known / not needed
+        cf_ok = None if wan is None or not wan['ip'] else (wan['ip'] == r['content'])
+        missing = [p for p in (80, 443) if host and wan and wan['key'] and not _fwd(forwards, wan['key'], p)]
+        if not host or wan is None or not wan['key'] or not npm_ip:
+            unifi_ok = None
+        else:
+            unifi_ok = not missing
+        status = {
+            'cf': {'ok': cf_ok, 'now': r['content'], 'to': wan['ip'] if wan else ''},
+            'npm': {'found': bool(host), 'target': ('%s:%s' % (host.get('forward_host', '?'), host.get('forward_port', '?'))) if host else ''},
+            'unifi': {'ok': unifi_ok, 'missing': missing},
+            'updateip': bool(wan and r.get('auto_update') and r.get('wan_id') == wan['id']),
+        }
+        items.append({'id': rid, 'name': r['name'], 'content': r['content'], 'facts': facts, 'status': status,
                       'wan_id': wan['id'] if wan else None, 'reason': reason, 'actions': ids,
                       'known': wan is not None})
     return {'items': items, 'actions': list(actions.values())}
+
+
+def _clean_target(t):
+    """{'scheme','host','port'} from user input, or None if it is not usable."""
+    import re
+    try:
+        host = str((t or {}).get('host', '')).strip()
+        port = int((t or {}).get('port', 0))
+        scheme = 'https' if (t or {}).get('scheme') == 'https' else 'http'
+    except (TypeError, ValueError):
+        return None
+    if not re.match(r'^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$', host) or not (1 <= port <= 65535):
+        return None
+    return {'scheme': scheme, 'host': host, 'port': port}
 
 
 def private_host(url):
