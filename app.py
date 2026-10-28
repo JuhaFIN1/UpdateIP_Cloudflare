@@ -29,6 +29,7 @@ from npm_api import get_npm_client, NpmClient
 from unifi_api import get_unifi_client, clear_cached_client, UnifiClient
 import unifi_policies
 import discovery
+import policy_wizard
 
 from config import APP_VERSION
 import licensing as licence
@@ -2060,6 +2061,146 @@ def wizard_finish():
 def wizard_skip():
     set_setting('WIZARD_DONE', '1')
     return redirect(url_for('dashboard'))
+
+
+# ---------------------------------------------------------------------------
+# DNS & WAN wizard (second wizard): DNS records, outgoing routes, incoming port forwards, test and save.
+# Every UniFi change shows a plain-language preview first and needs an explicit confirm.
+# ---------------------------------------------------------------------------
+def _wiz2_client():
+    client = get_unifi_client()
+    if not client or not client.is_connected():
+        return None
+    return client
+
+
+@app.route('/wizard2')
+@login_required
+def wizard2():
+    db = get_db()
+    wans = db.execute('SELECT id, name, current_ip FROM wan_interfaces ORDER BY name').fetchall()
+    recs = db.execute('''
+        SELECT r.id, r.name, r.type, r.content, r.auto_update, r.wan_id, z.name AS zone_name
+        FROM cf_records r JOIN cf_zones z ON r.zone_id = z.id
+        WHERE r.type IN ('A', 'AAAA') ORDER BY z.name, r.name
+    ''').fetchall()
+    db.close()
+    zones = {}
+    for r in recs:
+        zones.setdefault(r['zone_name'], []).append(dict(r))
+    return render_template('wizard2.html', wans=[dict(w) for w in wans], zones=zones,
+                           has_unifi=bool(_wiz2_client()))
+
+
+@app.route('/wizard2/data')
+@login_required
+def wizard2_data():
+    client = _wiz2_client()
+    if not client:
+        return jsonify({'ok': False, 'error': 'UniFi is not connected. Connect it in the first wizard.'})
+    overview, err = unifi_policies.get_overview(client)
+    return jsonify({'ok': True, 'wans': policy_wizard.wan_list(client), 'clients': policy_wizard.list_clients(client),
+                    'own': policy_wizard.own_rules(client), 'overview': overview, 'overview_error': err})
+
+
+@app.route('/wizard2/records', methods=['POST'])
+@login_required
+def wizard2_records():
+    changes = (request.get_json(silent=True) or {}).get('changes', [])
+    db = get_db()
+    valid_wans = {r['id'] for r in db.execute('SELECT id FROM wan_interfaces').fetchall()}
+    n = 0
+    for c in changes:
+        wan = c.get('wan_id')
+        wan = int(wan) if str(wan).isdigit() and int(wan) in valid_wans else None
+        db.execute('UPDATE cf_records SET auto_update = ?, wan_id = ? WHERE id = ? AND type IN (\'A\', \'AAAA\')',
+                   (1 if c.get('auto_update') else 0, wan, str(c.get('id', ''))))
+        n += 1
+    db.commit()
+    db.close()
+    return jsonify({'ok': True, 'saved': n})
+
+
+@app.route('/wizard2/<kind>/<step>', methods=['POST'])
+@login_required
+def wizard2_change(kind, step):
+    """kind: route | forward;  step: preview | create. Create needs confirm=true."""
+    if kind not in ('route', 'forward') or step not in ('preview', 'create'):
+        return jsonify({'ok': False, 'error': 'Unknown request.'}), 404
+    client = _wiz2_client()
+    if not client:
+        return jsonify({'ok': False, 'error': 'UniFi is not connected.'})
+    d = request.get_json(silent=True) or {}
+    if kind == 'route':
+        payload, preview, err = policy_wizard.build_route(client, d.get('name'), d.get('mac'), d.get('wan_id'), d.get('kill_switch'))
+    else:
+        payload, preview, err = policy_wizard.build_forward(client, d.get('name'), d.get('wan_key'), d.get('proto'),
+                                                            d.get('ext_port'), d.get('ip'), d.get('int_port'))
+    if err:
+        return jsonify({'ok': False, 'error': err})
+    if step == 'preview':
+        return jsonify({'ok': True, 'preview': preview})
+    if d.get('confirm') is not True:
+        return jsonify({'ok': False, 'error': 'Confirm the change first.'})
+    ok, err = (policy_wizard.create_route(client, payload) if kind == 'route' else policy_wizard.create_forward(client, payload))
+    if ok:
+        logger.info('DNS & WAN wizard: created UniFi %s "%s"', kind, payload.get('description') or payload.get('name'))
+    return jsonify({'ok': ok, 'error': err})
+
+
+@app.route('/wizard2/delete', methods=['POST'])
+@login_required
+def wizard2_delete():
+    client = _wiz2_client()
+    d = request.get_json(silent=True) or {}
+    if not client or d.get('kind') not in ('route', 'forward') or not d.get('id'):
+        return jsonify({'ok': False, 'error': 'UniFi is not connected.'})
+    ok, err = policy_wizard.delete_own(client, d['kind'], str(d['id']))
+    return jsonify({'ok': ok, 'error': err})
+
+
+@app.route('/wizard2/test', methods=['POST'])
+@login_required
+def wizard2_test():
+    """Dry run: what would the DNS update do right now? Nothing is written."""
+    db = get_db()
+    auto_ip = (db.execute('SELECT current_ip FROM settings WHERE id = 1').fetchone() or {'current_ip': ''})['current_ip']
+    rows = db.execute('''
+        SELECT r.name, r.type, r.content, r.wan_id, w.name AS wan_name, w.current_ip AS wan_ip
+        FROM cf_records r LEFT JOIN wan_interfaces w ON r.wan_id = w.id
+        WHERE r.auto_update = 1 AND r.type = 'A' ORDER BY r.name
+    ''').fetchall()
+    db.close()
+    out = []
+    for r in rows:
+        if r['wan_id']:
+            ip, via = r['wan_ip'], r['wan_name']
+        else:
+            ip, via = auto_ip, 'automatic'
+        if not ip:
+            status, note = 'wait', 'No address known yet for %s.' % via
+        elif ip == r['content']:
+            status, note = 'ok', 'Up to date (%s).' % ip
+        else:
+            status, note = 'change', 'Would change %s to %s.' % (r['content'] or 'empty', ip)
+        out.append({'name': r['name'], 'via': via, 'status': status, 'note': note})
+    return jsonify({'ok': True, 'unifi': bool(_wiz2_client()), 'records': out})
+
+
+@app.route('/wizard2/run-update', methods=['POST'])
+@login_required
+def wizard2_run_update():
+    if (request.get_json(silent=True) or {}).get('confirm') is not True:
+        return jsonify({'ok': False, 'error': 'Confirm first.'})
+    result = check_and_update_ip(force=False)
+    return jsonify({'ok': True, 'message': result.get('message', '')})
+
+
+@app.route('/wizard2/finish', methods=['POST'])
+@login_required
+def wizard2_finish():
+    set_setting('WIZARD2_DONE', '1')
+    return jsonify({'ok': True, 'next': url_for('dashboard')})
 
 
 @app.route('/policies')

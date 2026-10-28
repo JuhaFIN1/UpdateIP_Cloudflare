@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}DNS & WAN Wizard - UpdateIP{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-signpost-2 me-2"></i>DNS &amp; WAN Wizard</h2>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm">Close</a>
+</div>
+<div class="progress mb-4" style="height:8px"><div id="bar" class="progress-bar" style="width:0%"></div></div>
+<p class="text-muted small" id="stepLabel"></p>
+
+<!-- 1 Intro -->
+<section class="wz" data-title="Welcome">
+    <div class="card"><div class="card-body">
+        <h4>Choose what UpdateIP keeps in sync, and where traffic goes</h4>
+        <ol>
+            <li>Pick the DNS records that follow your IP, and which internet connection each one uses.</li>
+            <li>Choose which devices leave through which connection (optional).</li>
+            <li>Choose which services arrive on which connection (optional).</li>
+            <li>Test everything, then save.</li>
+        </ol>
+        <p class="text-muted small mb-0">Every change to UniFi is shown in plain words first, and nothing is changed until you confirm it. UpdateIP only ever removes rules that it created itself (their names start with "UpdateIP:").</p>
+        {% if not has_unifi %}<div class="alert alert-warning mt-3 mb-0">UniFi is not connected, so steps 3 and 4 are not available. Run the Setup Wizard first to connect it.</div>{% endif %}
+    </div></div>
+</section>
+
+<!-- 2 DNS records -->
+<section class="wz" data-title="DNS records">
+    <div class="card"><div class="card-body">
+        <h4>DNS records</h4>
+        <p class="small">Tick the records that should always point to your current IP. If you have more than one internet connection, choose which one each record uses.</p>
+        {% if not zones %}
+            <div class="alert alert-warning">No records found. Connect Cloudflare in the Setup Wizard first.</div>
+        {% endif %}
+        {% for zone, recs in zones.items() %}
+        <h6 class="mt-3">{{ zone }}</h6>
+        <div class="table-responsive"><table class="table table-sm align-middle">
+            <thead><tr><th style="width:90px">Keep updated</th><th>Record</th><th>Type</th><th>Current value</th><th>Internet connection</th></tr></thead>
+            <tbody>
+            {% for r in recs %}
+            <tr data-id="{{ r.id }}">
+                <td><input type="checkbox" class="form-check-input r-auto" {% if r.auto_update %}checked{% endif %}></td>
+                <td><code>{{ r.name }}</code></td><td>{{ r.type }}</td><td class="small text-muted">{{ r.content }}</td>
+                <td><select class="form-select form-select-sm r-wan">
+                    <option value="">Automatic</option>
+                    {% for w in wans %}<option value="{{ w.id }}" {% if r.wan_id == w.id %}selected{% endif %}>{{ w.name }}{% if w.current_ip %} ({{ w.current_ip }}){% endif %}</option>{% endfor %}
+                </select></td>
+            </tr>
+            {% endfor %}
+            </tbody></table></div>
+        {% endfor %}
+        <button class="btn btn-primary" id="recSave">Save</button>
+        <div id="recMsg" class="mt-2"></div>
+        <div class="form-check mt-3">
+            <input class="form-check-input" type="checkbox" id="recSkip">
+            <label class="form-check-label small" for="recSkip">I do not want to choose records now</label>
+        </div>
+    </div></div>
+</section>
+
+<!-- 3 Outgoing -->
+<section class="wz" data-title="Outgoing traffic">
+    <div class="card"><div class="card-body">
+        <h4>Which devices leave through which connection?</h4>
+        <div id="outList" class="mb-3"></div>
+        <h6>Add a rule</h6>
+        <div class="row g-2">
+            <div class="col-md-5"><select id="oDev" class="form-select"></select></div>
+            <div class="col-md-4"><select id="oWan" class="form-select"></select></div>
+            <div class="col-md-3"><input id="oName" class="form-control" placeholder="Name (optional)"></div>
+        </div>
+        <div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="oKill"><label class="form-check-label small" for="oKill">Block this device if that connection is down (otherwise it uses the other one)</label></div>
+        <div class="mt-2"><button class="btn btn-outline-primary" id="oPrev">Preview</button></div>
+        <div id="oMsg" class="mt-2"></div>
+    </div></div>
+</section>
+
+<!-- 4 Incoming -->
+<section class="wz" data-title="Incoming traffic">
+    <div class="card"><div class="card-body">
+        <h4>Which services arrive on which connection?</h4>
+        <div id="inList" class="mb-3"></div>
+        <h6>Open a port</h6>
+        <div class="row g-2">
+            <div class="col-md-3"><input id="iName" class="form-control" placeholder="Name (e.g. Web)"></div>
+            <div class="col-md-3"><select id="iWan" class="form-select"></select></div>
+            <div class="col-md-2"><select id="iProto" class="form-select"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="tcp_udp">TCP + UDP</option></select></div>
+            <div class="col-md-2"><input id="iExt" class="form-control" placeholder="Port"></div>
+            <div class="col-md-2"><input id="iInt" class="form-control" placeholder="To port (same)"></div>
+            <div class="col-md-12"><select id="iDev" class="form-select"></select></div>
+        </div>
+        <div class="mt-2"><button class="btn btn-outline-primary" id="iPrev">Preview</button></div>
+        <div id="iMsg" class="mt-2"></div>
+    </div></div>
+</section>
+
+<!-- 5 Test and save -->
+<section class="wz" data-title="Test and save">
+    <div class="card"><div class="card-body">
+        <h4>Test</h4>
+        <p class="small">This shows what the DNS update would do right now. Nothing is changed by the test.</p>
+        <button class="btn btn-outline-primary" id="testBtn">Run test</button>
+        <div id="testOut" class="mt-3"></div>
+        <hr>
+        <div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="runOk"><label class="form-check-label small" for="runOk">Also update my DNS records now if an address has changed</label></div>
+        <button class="btn btn-warning" id="runBtn" disabled>Update DNS now</button>
+        <div id="runMsg" class="mt-2"></div>
+    </div></div>
+</section>
+
+<div class="d-flex justify-content-between mt-4">
+    <button class="btn btn-outline-secondary" id="back">Back</button>
+    <button class="btn btn-primary" id="next">Next</button>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const steps = [...document.querySelectorAll('.wz')];
+  let cur = 0, recSaved = false, tested = false, pending = {o: false, i: false}, data = null;
+  const post = (u, b) => fetch(u, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b || {})}).then(r => r.json());
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const msg = (el, ok, t) => { el.innerHTML = '<div class="alert alert-' + (ok ? 'success' : 'danger') + ' py-2 mb-0">' + esc(t) + '</div>'; };
+
+  function show(i) {
+    cur = i;
+    steps.forEach((s, k) => s.classList.toggle('d-none', k !== i));
+    $('bar').style.width = Math.round(((i + 1) / steps.length) * 100) + '%';
+    $('stepLabel').textContent = 'Step ' + (i + 1) + ' of ' + steps.length + ': ' + steps[i].dataset.title;
+    $('back').style.visibility = i === 0 ? 'hidden' : 'visible';
+    $('next').textContent = i === steps.length - 1 ? 'Finish' : (i === 0 ? 'Start' : 'Next');
+    if ((i === 2 || i === 3) && !data) load();
+  }
+
+  // ---- UniFi data for steps 3 and 4
+  async function load() {
+    const r = await fetch('{{ url_for("wizard2_data") }}').then(r => r.json());
+    if (!r.ok) { data = {error: r.error}; draw(); return; }
+    data = r; draw();
+  }
+  function opts(list, val, label) { return list.map(x => '<option value="' + esc(x[val]) + '">' + label(x) + '</option>').join(''); }
+  function draw() {
+    if (!data) return;
+    if (data.error) { $('outList').innerHTML = $('inList').innerHTML = '<div class="alert alert-warning">' + esc(data.error) + '</div>'; return; }
+    const devLabel = d => esc(d.name) + (d.ip ? ' (' + esc(d.ip) + ')' : '');
+    $('oDev').innerHTML = '<option value="">Choose a device...</option>' + opts(data.clients, 'mac', devLabel);
+    $('oWan').innerHTML = opts(data.wans, 'id', w => 'Leave through ' + esc(w.name));
+    $('iWan').innerHTML = opts(data.wans.filter(w => w.key), 'key', w => 'On ' + esc(w.name));
+    $('iDev').innerHTML = '<option value="">Send to which device...</option>' + opts(data.clients.filter(d => d.ip), 'ip', devLabel);
+    const own = (kind, id) => (data.own[kind === 'route' ? 'routes' : 'forwards'] || []).find(x => x.id === id);
+    $('outList').innerHTML = data.overview ? data.overview.wans.map(w => '<div class="mb-2"><b>' + esc(w.name) + '</b>' +
+      (w.outgoing.length ? w.outgoing.map(o => '<div class="small ms-2">&bull; ' + esc(o.title) + ': ' + esc(o.who.join(', ')) + ' &rarr; ' + esc(o.what) + '</div>').join('') : '<div class="small ms-2 text-muted">No special rules</div>') + '</div>').join('') : '';
+    $('inList').innerHTML = data.overview ? data.overview.wans.map(w => '<div class="mb-2"><b>' + esc(w.name) + '</b>' +
+      (w.incoming.length ? w.incoming.map(i => '<div class="small ms-2">&bull; ' + esc(i.title) + ': ' + esc(i.proto) + ' port ' + esc(i.port) + ' &rarr; ' + esc(i.to) + '</div>').join('') : '<div class="small ms-2 text-muted">Nothing is opened</div>') + '</div>').join('') : '';
+    const mine = (data.own.routes.length + data.own.forwards.length) ?
+      '<div class="mt-2"><b class="small">Created by UpdateIP</b>' + data.own.routes.map(r => ownRow('route', r)).join('') + data.own.forwards.map(f => ownRow('forward', f)).join('') + '</div>' : '';
+    $('outList').insertAdjacentHTML('beforeend', mine);
+  }
+  function ownRow(kind, x) {
+    return '<div class="small ms-2">' + (kind === 'route' ? 'Route: ' : 'Port: ') + esc(x.name) + ' <a href="#" class="text-danger" data-del="' + kind + ':' + esc(x.id) + '">remove</a></div>';
+  }
+  document.addEventListener('click', async e => {
+    const d = e.target.dataset && e.target.dataset.del; if (!d) return;
+    e.preventDefault();
+    if (!confirm('Remove this rule from UniFi? It was created by UpdateIP.')) return;
+    const [kind, id] = d.split(':');
+    const r = await post('{{ url_for("wizard2_delete") }}', {kind, id});
+    if (!r.ok) { alert(r.error); return; }
+    data = null; await load();
+  });
+
+  // ---- change flow: preview, then explicit confirm, then create
+  function changeFlow(kind, btn, msgEl, body, key) {
+    btn.onclick = async () => {
+      const r = await post('{{ url_for("wizard2_change", kind="KIND", step="preview") }}'.replace('KIND', kind), body());
+      if (!r.ok) { msg(msgEl, false, r.error); return; }
+      pending[key] = true;
+      msgEl.innerHTML = '<div class="alert alert-info py-2"><b>This will happen:</b> ' + esc(r.preview) + '</div>' +
+        '<button class="btn btn-success btn-sm" id="' + key + 'Go">Confirm and create</button> <button class="btn btn-outline-secondary btn-sm" id="' + key + 'No">Cancel</button>';
+      $(key + 'No').onclick = () => { pending[key] = false; msgEl.innerHTML = ''; };
+      $(key + 'Go').onclick = async () => {
+        const c = await post('{{ url_for("wizard2_change", kind="KIND", step="create") }}'.replace('KIND', kind), Object.assign(body(), {confirm: true}));
+        pending[key] = false;
+        if (!c.ok) { msg(msgEl, false, c.error); return; }
+        msg(msgEl, true, 'Created in UniFi.'); data = null; await load();
+      };
+    };
+  }
+  changeFlow('route', $('oPrev'), $('oMsg'), () => ({name: $('oName').value, mac: $('oDev').value, wan_id: $('oWan').value, kill_switch: $('oKill').checked}), 'o');
+  changeFlow('forward', $('iPrev'), $('iMsg'), () => ({name: $('iName').value, wan_key: $('iWan').value, proto: $('iProto').value, ext_port: $('iExt').value, int_port: $('iInt').value, ip: $('iDev').value}), 'i');
+
+  // ---- step 2 save
+  $('recSave').onclick = async () => {
+    const changes = [...document.querySelectorAll('tr[data-id]')].map(tr => ({id: tr.dataset.id, auto_update: tr.querySelector('.r-auto').checked, wan_id: tr.querySelector('.r-wan').value}));
+    const r = await post('{{ url_for("wizard2_records") }}', {changes});
+    msg($('recMsg'), r.ok, r.ok ? 'Saved ' + r.saved + ' record(s).' : 'Could not save.');
+    recSaved = r.ok;
+  };
+
+  // ---- step 5 test and update
+  $('testBtn').onclick = async () => {
+    const r = await post('{{ url_for("wizard2_test") }}');
+    tested = true;
+    const icon = {ok: 'check-circle text-success', change: 'arrow-repeat text-warning', wait: 'hourglass text-muted'};
+    $('testOut').innerHTML = '<p class="small mb-1">UniFi: ' + (r.unifi ? '<span class="text-success">connected</span>' : '<span class="text-warning">not connected</span>') + '</p>' +
+      (r.records.length ? '<ul class="list-unstyled small">' + r.records.map(x => '<li><i class="bi bi-' + icon[x.status] + '"></i> <code>' + esc(x.name) + '</code> via ' + esc(x.via) + ': ' + esc(x.note) + '</li>').join('') + '</ul>' : '<p class="text-muted small">No records are set to update yet.</p>');
+  };
+  $('runOk').onchange = () => { $('runBtn').disabled = !$('runOk').checked; };
+  $('runBtn').onclick = async () => {
+    const r = await post('{{ url_for("wizard2_run_update") }}', {confirm: $('runOk').checked});
+    msg($('runMsg'), r.ok, r.ok ? (r.message || 'Done.') : r.error);
+  };
+
+  $('back').onclick = () => show(Math.max(0, cur - 1));
+  $('next').onclick = async () => {
+    if (cur === 1 && !recSaved && !$('recSkip').checked) { msg($('recMsg'), false, 'Press Save first, or tick the box below to skip this step.'); return; }
+    if (cur === 2 && pending.o) { msg($('oMsg'), false, 'Confirm or cancel the change above first.'); return; }
+    if (cur === 3 && pending.i) { msg($('iMsg'), false, 'Confirm or cancel the change above first.'); return; }
+    if (cur === 4 && !tested) { msg($('testOut'), false, 'Run the test before finishing.'); return; }
+    if (cur === steps.length - 1) { const r = await post('{{ url_for("wizard2_finish") }}'); location.href = r.next; return; }
+    show(cur + 1);
+  };
+  show(0);
+})();
+</script>
+{% endblock %}

@@ -49,6 +49,7 @@ class UnifiClient:
                 timeout=15,
             )
             if r.status_code == 200:
+                self._set_csrf(r)
                 self._logged_in = True
                 self._login_time = now
                 self._login_backoff_until = 0
@@ -65,6 +66,27 @@ class UnifiClient:
             logger.error('UniFi login error: %s', e)
             return False
 
+    def _set_csrf(self, response):
+        """UniFi OS needs the CSRF token on every write (POST/PUT/DELETE). Keep the newest one."""
+        tok = response.headers.get('X-Updated-CSRF-Token') or response.headers.get('X-CSRF-Token')
+        if tok:
+            self.session.headers['X-CSRF-Token'] = tok
+
+    def write_json(self, method, path, payload=None):
+        """Authenticated POST/PUT/DELETE with a JSON body. Returns (ok, data, status_code); never raises."""
+        try:
+            r = self._request(method, path, json=payload) if payload is not None else self._request(method, path)
+        except Exception as e:
+            logger.warning('UniFi write failed: %s', type(e).__name__)
+            return False, None, None
+        if r is None:
+            return False, None, None
+        try:
+            data = r.json()
+        except ValueError:
+            data = None
+        return r.ok, data, r.status_code
+
     def _ensure_logged_in(self):
         """Login only if not already logged in or session is old (>30 min)."""
         if self._logged_in and (time.time() - self._login_time) < 1800:
@@ -78,6 +100,7 @@ class UnifiClient:
         kwargs.setdefault('timeout', 15)
         url = f'{self.base_url}{path}'
         r = getattr(self.session, method)(url, **kwargs)
+        self._set_csrf(r)
         if r.status_code in (401, 403):
             logger.info('UniFi session expired (%s), re-authenticating', r.status_code)
             self._logged_in = False
