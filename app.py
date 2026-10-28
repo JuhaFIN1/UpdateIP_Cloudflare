@@ -159,7 +159,8 @@ def ensure_admin():
 # ---------------------------------------------------------------------------
 
 def _refresh_unifi_wans():
-    """Refresh WAN IPs/ISP from UniFi into wan_interfaces. Returns count of WANs updated."""
+    """Refresh WAN IPs/ISP from UniFi into wan_interfaces, creating rows for WANs not seen before.
+    Returns count of WANs found."""
     client = get_unifi_client()
     if not client or not client._ensure_logged_in():
         return 0
@@ -177,6 +178,12 @@ def _refresh_unifi_wans():
             db.execute(
                 'UPDATE wan_interfaces SET current_ip = ?, isp_name = ?, last_checked = CURRENT_TIMESTAMP WHERE id = ?',
                 (ip, isp, existing['id']))
+        else:
+            display_name = f"{unifi_name} ({isp})" if isp else unifi_name
+            db.execute(
+                'INSERT INTO wan_interfaces (name, detect_method, unifi_wan_name, current_ip, isp_name) '
+                'VALUES (?, ?, ?, ?, ?)',
+                (display_name, 'unifi', unifi_name, ip, isp))
     db.commit()
     db.close()
     return len(wan_details)
@@ -2077,6 +2084,11 @@ def _wiz2_client():
 @app.route('/wizard2')
 @login_required
 def wizard2():
+    if _wiz2_client():
+        try:
+            _refresh_unifi_wans()        # make sure the internet connections exist in the list below
+        except Exception:
+            logger.warning('DNS & WAN wizard: could not refresh WANs from UniFi')
     db = get_db()
     wans = db.execute('SELECT id, name, current_ip FROM wan_interfaces ORDER BY name').fetchall()
     recs = db.execute('''
