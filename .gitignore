@@ -39,3 +39,6 @@ CLAUDE.md
 # Licence state (contains the install token)
 license.json
 license.json.tmp
+
+# Session key
+secret.key

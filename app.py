@@ -43,7 +43,30 @@ app = Flask(__name__)
 
 # Cached result of the last GitHub update check (set by scheduled job)
 _update_info = {'available': False, 'behind': 0, 'changes': '', 'checked_at': None}
-app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+def _load_secret_key():
+    """Session key: from SECRET_KEY, else a key stored next to the app so that restarts and updates keep you signed in."""
+    env = os.environ.get('SECRET_KEY')
+    if env:
+        return env
+    path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'secret.key')
+    try:
+        with open(path, encoding='utf-8') as f:
+            key = f.read().strip()
+        if len(key) >= 32:
+            return key
+    except OSError:
+        pass
+    key = secrets.token_hex(32)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(key)
+    except OSError:
+        logging.getLogger(__name__).warning('Could not store the session key; you will be signed out on restart')
+    return key
+
+
+app.secret_key = _load_secret_key()
 app.config['SCHEDULER_API_ENABLED'] = False
 app.config['APP_VERSION'] = APP_VERSION
 
