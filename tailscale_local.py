@@ -68,14 +68,14 @@ def status():
         out['state'] = 'NoState'
         return out
     out['state'] = j.get('BackendState', '')
-    url = j.get('AuthURL') or ''
+    url = j.get('AuthURL') if isinstance(j.get('AuthURL'), str) else ''
     out['auth_url'] = url if re.match(r'^https://[A-Za-z0-9.-]+\.tailscale\.com/', url) or url.startswith('https://login.') else ''
-    me = j.get('Self') or {}
-    ips = [a for a in me.get('TailscaleIPs', []) if re.match(r'^\d+\.\d+\.\d+\.\d+$', a)]
+    me = j.get('Self') if isinstance(j.get('Self'), dict) else {}
+    ips = [a for a in (me.get('TailscaleIPs') or []) if re.match(r'^\d+\.\d+\.\d+\.\d+$', a)]
     out['self'] = {'name': me.get('HostName', ''), 'ip': ips[0] if ips else ''}
     devices = []
-    for p in (j.get('Peer') or {}).values():
-        pips = [a for a in p.get('TailscaleIPs', []) if re.match(r'^\d+\.\d+\.\d+\.\d+$', a)]
+    for p in (j.get('Peer') if isinstance(j.get('Peer'), dict) else {}).values():
+        pips = [a for a in (p.get('TailscaleIPs') or []) if re.match(r'^\d+\.\d+\.\d+\.\d+$', a)]
         routes = [x for x in (p.get('PrimaryRoutes') or []) if x not in ('0.0.0.0/0', '::/0')]
         devices.append({'name': p.get('HostName', ''), 'ip': pips[0] if pips else '', 'online': bool(p.get('Online')),
                         'os': p.get('OS', ''), 'exit_node': bool(p.get('ExitNodeOption')), 'routes': routes,

@@ -2256,7 +2256,11 @@ def wizard2_finish():
 @app.route('/tailscale/local/status')
 @login_required
 def tailscale_local_status():
-    st = tailscale_local.status()
+    try:
+        st = tailscale_local.status()
+    except Exception as e:          # never let a Tailscale problem break the page
+        logger.warning('Tailscale status failed: %s', type(e).__name__)
+        st = {'installed': False, 'state': '', 'auth_url': '', 'self': {}, 'devices': [], 'installing': {'state': 'idle', 'msg': ''}}
     st['devices'] = len(st['devices'])
     return jsonify(st)
 
@@ -2285,7 +2289,10 @@ def tailscale_local_logout():
 @app.route('/tailscale/status')
 @login_required
 def tailscale_status():
-    local = tailscale_local.status()['state'] == 'Running'
+    try:
+        local = tailscale_local.status()['state'] == 'Running'
+    except Exception:
+        local = False
     return jsonify({'enabled': get_setting('TAILSCALE_ENABLED', '') == '1',
                     'connected': bool(get_setting('TAILSCALE_API_KEY', '')) or local,
                     'tailnet': get_setting('TAILSCALE_TAILNET', '-') or '-'})
