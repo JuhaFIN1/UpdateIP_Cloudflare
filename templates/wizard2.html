@@ -28,6 +28,20 @@
     <div class="card"><div class="card-body">
         <h4>DNS records</h4>
         <div class="alert alert-secondary py-2 small mb-3"><div><b>What this does:</b> You choose which DNS records follow your public IP address, and which internet connection each record uses.</div><div><b>Why it is needed:</b> This is the main job of UpdateIP: when your IP changes, the ticked records are updated for you.</div><div><b>Required:</b> <span class="text-danger">Yes</span>. You can skip it only by ticking the box at the bottom of this step.</div></div>
+        {% if wans %}
+        <div class="border rounded p-2 mb-3">
+            <b class="small">Give your internet connections a nickname (optional)</b>
+            <div class="row g-2 mt-1">
+                {% for w in wans %}
+                <div class="col-md-6"><div class="input-group input-group-sm">
+                    <span class="input-group-text">{{ w.name }}{% if w.current_ip %} ({{ w.current_ip }}){% endif %}</span>
+                    <input class="form-control nick" data-id="{{ w.id }}" maxlength="40" value="{{ w.nickname or '' }}" placeholder="Nickname, e.g. Home fibre">
+                </div></div>
+                {% endfor %}
+            </div>
+            <button class="btn btn-outline-secondary btn-sm mt-2" id="nickSave">Save nicknames</button> <span id="nickMsg" class="small ms-2"></span>
+        </div>
+        {% endif %}
         <p class="small">Tick the records that should always point to your current IP. If you have more than one internet connection, choose which one each record uses.</p>
         {% if not zones %}
             <div class="alert alert-warning">No records found. Connect Cloudflare in the Setup Wizard first.</div>
@@ -43,7 +57,7 @@
                 <td><code>{{ r.name }}</code></td><td>{{ r.type }}</td><td class="small text-muted">{{ r.content }}</td>
                 <td><select class="form-select form-select-sm r-wan">
                     <option value="">Automatic</option>
-                    {% for w in wans %}<option value="{{ w.id }}" {% if r.wan_id == w.id %}selected{% endif %}>{{ w.name }}{% if w.current_ip %} ({{ w.current_ip }}){% endif %}</option>{% endfor %}
+                    {% for w in wans %}<option value="{{ w.id }}" {% if r.wan_id == w.id %}selected{% endif %}>{{ w|wan_label }}{% if w.current_ip %} ({{ w.current_ip }}){% endif %}</option>{% endfor %}
                 </select></td>
             </tr>
             {% endfor %}
@@ -260,6 +274,18 @@
   changeFlow('route', $('oPrev'), $('oMsg'), () => ({name: $('oName').value, mac: $('oDev').value, wan_id: $('oWan').value, kill_switch: $('oKill').checked}), 'o');
   changeFlow('forward', $('iPrev'), $('iMsg'), () => ({name: $('iName').value, wan_key: $('iWan').value, proto: $('iProto').value, ext_port: $('iExt').value, int_port: $('iInt').value, ip: $('iDev').value}), 'i');
 
+  // ---- nicknames: saved on their own, and shown right away in the lists below
+  if ($('nickSave')) $('nickSave').onclick = async () => {
+    const items = [...document.querySelectorAll('.nick')].map(i => ({id: i.dataset.id, nickname: i.value}));
+    await post('{{ url_for("wizard2_nicknames") }}', {items});
+    items.forEach(it => document.querySelectorAll('.r-wan option[value="' + it.id + '"]').forEach(o => {
+      const ip = (o.textContent.match(/\([^)]*\)\s*$/) || [''])[0];
+      const base = it.nickname.trim() || o.dataset.name || o.textContent.replace(/\s*\([^)]*\)\s*$/, '');
+      o.dataset.name = o.dataset.name || o.textContent.replace(/\s*\([^)]*\)\s*$/, '');
+      o.textContent = base + (ip ? ' ' + ip : '');
+    }));
+    $('nickMsg').textContent = 'Saved.'; data = null;
+  };
   // ---- step 2 save
   $('recSave').onclick = async () => {
     const changes = [...document.querySelectorAll('tr[data-id]')].map(tr => ({id: tr.dataset.id, auto_update: tr.querySelector('.r-auto').checked, wan_id: tr.querySelector('.r-wan').value}));

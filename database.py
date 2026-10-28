@@ -131,6 +131,8 @@ def init_db():
     cols = [r[1] for r in conn.execute("PRAGMA table_info(wan_interfaces)").fetchall()]
     if cols and 'isp_name' not in cols:
         conn.execute("ALTER TABLE wan_interfaces ADD COLUMN isp_name TEXT DEFAULT ''")
+    if cols and 'nickname' not in cols:
+        conn.execute("ALTER TABLE wan_interfaces ADD COLUMN nickname TEXT DEFAULT ''")
     # Ensure npm_settings row exists
     npm_row = conn.execute('SELECT id FROM npm_settings WHERE id = 1').fetchone()
     if not npm_row:

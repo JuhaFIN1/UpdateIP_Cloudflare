@@ -98,7 +98,7 @@
                             <select name="wan_id" class="form-select form-select-sm" style="width:auto;min-width:100px" onchange="this.form.submit()">
                                 <option value="0">Default</option>
                                 {% for w in wans %}
-                                <option value="{{ w['id'] }}" {% if r['wan_id'] == w['id'] %}selected{% endif %}>{{ w['name'] }}</option>
+                                <option value="{{ w['id'] }}" {% if r['wan_id'] == w['id'] %}selected{% endif %}>{{ w|wan_label }}</option>
                                 {% endfor %}
                             </select>
                         </form>

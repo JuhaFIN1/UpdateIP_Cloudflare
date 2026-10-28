@@ -715,7 +715,7 @@ def dashboard():
     wans = db.execute('SELECT * FROM wan_interfaces ORDER BY name').fetchall()
     records = db.execute('''
         SELECT r.*, z.name as zone_name, a.name as account_name,
-               w.name as wan_name
+               COALESCE(NULLIF(w.nickname, ''), w.name) AS wan_name
         FROM cf_records r
         JOIN cf_zones z ON r.zone_id = z.id
         JOIN cf_accounts a ON r.account_id = a.id
@@ -900,7 +900,7 @@ def records():
     ''').fetchall()
     recs = db.execute('''
         SELECT r.*, z.name as zone_name, a.name as account_name,
-               w.name as wan_name
+               COALESCE(NULLIF(w.nickname, ''), w.name) AS wan_name
         FROM cf_records r
         JOIN cf_zones z ON r.zone_id = z.id
         JOIN cf_accounts a ON r.account_id = a.id
@@ -1097,7 +1097,7 @@ def force_update():
 def logs():
     db = get_db()
     ip_logs = db.execute(
-        'SELECT l.*, w.name AS wan_name FROM ip_log l '
+        'SELECT l.*, COALESCE(NULLIF(w.nickname, ""), w.name) AS wan_name FROM ip_log l '
         'LEFT JOIN wan_interfaces w ON l.wan_id = w.id '
         'ORDER BY l.changed_at DESC LIMIT 100'
     ).fetchall()
@@ -1359,7 +1359,7 @@ def _build_backup():
         'cf_records': [dict(r) for r in db.execute(
             'SELECT id, zone_id, account_id, name, type, content, proxied, auto_update, wan_id FROM cf_records ORDER BY name').fetchall()],
         'wan_interfaces': [dict(r) for r in db.execute(
-            'SELECT id, name, detect_method, static_ip, current_ip, unifi_wan_name, isp_name FROM wan_interfaces ORDER BY name').fetchall()],
+            'SELECT id, name, nickname, detect_method, static_ip, current_ip, unifi_wan_name, isp_name FROM wan_interfaces ORDER BY name').fetchall()],
         'unifi_settings': {},
         'npm_settings': {},
         'npm_proxy_hosts': [],
@@ -1648,14 +1648,14 @@ def restore_apply():
         for w in backup['wan_interfaces']:
             existing = db.execute('SELECT id FROM wan_interfaces WHERE name = ?', (w['name'],)).fetchone()
             if not existing:
-                db.execute('''INSERT INTO wan_interfaces (name, detect_method, static_ip, current_ip, unifi_wan_name, isp_name)
-                              VALUES (?, ?, ?, ?, ?, ?)''',
-                           (w['name'], w.get('detect_method', 'auto'), w.get('static_ip', ''),
+                db.execute('''INSERT INTO wan_interfaces (name, nickname, detect_method, static_ip, current_ip, unifi_wan_name, isp_name)
+                              VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                           (w['name'], w.get('nickname', ''), w.get('detect_method', 'auto'), w.get('static_ip', ''),
                             w.get('current_ip', ''), w.get('unifi_wan_name', ''), w.get('isp_name', '')))
             else:
-                db.execute('''UPDATE wan_interfaces SET detect_method=?, static_ip=?, unifi_wan_name=?, isp_name=?
+                db.execute('''UPDATE wan_interfaces SET nickname=?, detect_method=?, static_ip=?, unifi_wan_name=?, isp_name=?
                               WHERE name=?''',
-                           (w.get('detect_method', 'auto'), w.get('static_ip', ''),
+                           (w.get('nickname', ''), w.get('detect_method', 'auto'), w.get('static_ip', ''),
                             w.get('unifi_wan_name', ''), w.get('isp_name', ''), w['name']))
         restored.append('WAN Interfaces')
 
@@ -1873,7 +1873,7 @@ def api_status():
     wans = db.execute('SELECT id, name, current_ip, detect_method FROM wan_interfaces ORDER BY name').fetchall()
     records = db.execute('''
         SELECT r.name, r.content, r.last_status, r.last_updated,
-               z.name as zone_name, w.name as wan_name
+               z.name as zone_name, COALESCE(NULLIF(w.nickname, ''), w.name) AS wan_name
         FROM cf_records r
         JOIN cf_zones z ON r.zone_id = z.id
         LEFT JOIN wan_interfaces w ON r.wan_id = w.id
@@ -1900,7 +1900,7 @@ _WIZARD_OPEN = {'wizard', 'wizard_subnets', 'wizard_scan', 'wizard_scan_status',
                 'logout', 'static', 'login', 'change_password', 'licence_page', 'licence_start',
                 'licence_poll', 'licence_unlink', 'tailscale_status', 'tailscale_test', 'tailscale_save',
                 'tailscale_toggle', 'tailscale_devices', 'tailscale_dns', 'tailscale_dns_zones', 'wizard2', 'wizard2_data', 'wizard2_records',
-                'wizard2_change', 'wizard2_delete', 'wizard2_test', 'wizard2_run_update', 'wizard2_finish'}
+                'wizard2_change', 'wizard2_delete', 'wizard2_nicknames', 'wizard2_test', 'wizard2_run_update', 'wizard2_finish'}
 
 
 @app.before_request
@@ -2094,7 +2094,7 @@ def wizard2():
         except Exception:
             logger.warning('DNS & WAN wizard: could not refresh WANs from UniFi')
     db = get_db()
-    wans = db.execute('SELECT id, name, current_ip FROM wan_interfaces ORDER BY name').fetchall()
+    wans = db.execute('SELECT id, name, nickname, current_ip FROM wan_interfaces ORDER BY name').fetchall()
     recs = db.execute('''
         SELECT r.id, r.name, r.type, r.content, r.auto_update, r.wan_id, z.name AS zone_name
         FROM cf_records r JOIN cf_zones z ON r.zone_id = z.id
@@ -2115,7 +2115,9 @@ def wizard2_data():
     if not client:
         return jsonify({'ok': False, 'error': 'UniFi is not connected. Connect it in the first wizard.'})
     overview, err = unifi_policies.get_overview(client)
-    return jsonify({'ok': True, 'wans': policy_wizard.wan_list(client), 'clients': policy_wizard.list_clients(client),
+    wans = policy_wizard.wan_list(client)
+    _apply_nicknames(overview=overview, wans=wans)
+    return jsonify({'ok': True, 'wans': wans, 'clients': policy_wizard.list_clients(client),
                     'own': policy_wizard.own_rules(client), 'overview': overview, 'overview_error': err})
 
 
@@ -2185,7 +2187,7 @@ def wizard2_test():
     db = get_db()
     auto_ip = (db.execute('SELECT current_ip FROM settings WHERE id = 1').fetchone() or {'current_ip': ''})['current_ip']
     rows = db.execute('''
-        SELECT r.name, r.type, r.content, r.wan_id, w.name AS wan_name, w.current_ip AS wan_ip
+        SELECT r.name, r.type, r.content, r.wan_id, COALESCE(NULLIF(w.nickname, ''), w.name) AS wan_name, w.current_ip AS wan_ip
         FROM cf_records r LEFT JOIN wan_interfaces w ON r.wan_id = w.id
         WHERE r.auto_update = 1 AND r.type = 'A' ORDER BY r.name
     ''').fetchall()
@@ -2375,6 +2377,42 @@ def tailscale_dns_zones():
     return jsonify({'zones': [dict(r) for r in rows]})
 
 
+@app.template_filter('wan_label')
+def wan_label(w):
+    """The nickname of a WAN if it has one, otherwise its name."""
+    try:
+        return (w['nickname'] or '').strip() or w['name']
+    except (KeyError, IndexError, TypeError):
+        return w['name']
+
+
+def _apply_nicknames(overview=None, wans=None):
+    """Show the user's nicknames for UniFi's internet connections (matched by the WAN key: wan, wan2, ...)."""
+    db = get_db()
+    rows = db.execute('SELECT unifi_wan_name, nickname FROM wan_interfaces').fetchall()
+    db.close()
+    nick = {(r['unifi_wan_name'] or '').lower(): (r['nickname'] or '').strip() for r in rows if (r['nickname'] or '').strip()}
+    for w in list((overview or {}).get('wans', [])) + list(wans or []):
+        n = nick.get((w.get('key') or '').lower())
+        if n:
+            w['original'] = w.get('name')
+            w['name'] = n
+
+
+@app.route('/wizard2/nicknames', methods=['POST'])
+@login_required
+def wizard2_nicknames():
+    items = (request.get_json(silent=True) or {}).get('items', [])
+    db = get_db()
+    for it in items:
+        if str(it.get('id', '')).isdigit():
+            db.execute('UPDATE wan_interfaces SET nickname = ? WHERE id = ?',
+                       (str(it.get('nickname', '')).strip()[:40], int(it['id'])))
+    db.commit()
+    db.close()
+    return jsonify({'ok': True})
+
+
 @app.route('/policies')
 @login_required
 def policies():
@@ -2385,6 +2423,7 @@ def policies():
         error = 'UniFi is not connected.'
     else:
         overview, error = unifi_policies.get_overview(client)
+        _apply_nicknames(overview=overview)
     return render_template('policies.html', overview=overview, error=error)
 
 
@@ -2451,6 +2490,7 @@ def wan_add():
 @app.route('/wan/<int:wan_id>/edit', methods=['POST'])
 @login_required
 def wan_edit(wan_id):
+    nickname = request.form.get('nickname', '').strip()[:40]
     name = request.form.get('name', '').strip()
     detect_method = request.form.get('detect_method', 'auto')
     static_ip = request.form.get('static_ip', '').strip()
@@ -2462,8 +2502,8 @@ def wan_edit(wan_id):
         detect_method = 'auto'
     db = get_db()
     db.execute(
-        'UPDATE wan_interfaces SET name = ?, detect_method = ?, static_ip = ?, unifi_wan_name = ? WHERE id = ?',
-        (name, detect_method, static_ip, unifi_wan_name, wan_id))
+        'UPDATE wan_interfaces SET name = ?, detect_method = ?, static_ip = ?, unifi_wan_name = ?, nickname = ? WHERE id = ?',
+        (name, detect_method, static_ip, unifi_wan_name, nickname, wan_id))
     db.commit()
     db.close()
     flash(f'WAN "{name}" updated', 'success')

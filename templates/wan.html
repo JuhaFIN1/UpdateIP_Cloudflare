@@ -84,7 +84,7 @@
                 <tbody>
                     {% for w in wans %}
                     <tr>
-                        <td><strong>{{ w['name'] }}</strong></td>
+                        <td><strong>{{ w|wan_label }}</strong>{% if w['nickname'] %}<br><small class="text-muted">{{ w['name'] }}</small>{% endif %}</td>
                         <td>
                             {% if w['detect_method'] == 'unifi' %}
                             <span class="badge bg-info">UniFi</span>
@@ -128,6 +128,11 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Nickname (optional)</label>
+                        <input type="text" name="nickname" class="form-control" maxlength="40" value="{{ w['nickname'] or '' }}" placeholder="For example Home fibre">
+                        <div class="form-text">A short name you choose. It is shown on the cards instead of the technical name.</div>
+                    </div>
                     <div class="mb-3">
                         <label class="form-label">Name</label>
                         <input type="text" name="name" class="form-control" required value="{{ w['name'] }}">

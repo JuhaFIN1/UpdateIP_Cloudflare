@@ -367,7 +367,7 @@
                 </tr>
                 {% for w in wans %}
                 <tr>
-                    <td class="fw-bold ps-3 text-nowrap">{{ w['name'] }}
+                    <td class="fw-bold ps-3 text-nowrap">{{ w|wan_label }}
                         {% if w['detect_method'] == 'unifi' %}<span class="badge bg-info ms-1">UniFi</span>
                         {% elif w['detect_method'] == 'static' %}<span
                             class="badge bg-warning text-dark ms-1">Static</span>
