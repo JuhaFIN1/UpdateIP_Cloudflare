@@ -50,11 +50,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/JuhaFIN1/UpdateIP_Cloudf
 
 3. Choose **Default** (1 core, 512 MB, 4 GB, DHCP) or **Advanced** (container ID, resources, storage, bridge, **static IP**). A static IP or a DHCP reservation is recommended.
 4. When it finishes, open the address it prints (`http://<container-ip>` or `http://updateip.local`).
-5. Sign in. The username and a random password are stored in the container:
-
-```bash
-pct exec <CTID> -- cat /root/updateip-admin.txt
-```
+5. Sign in with **`admin` / `admin`**. The app asks you to choose your own password straight away (at least 8 characters); nothing else works until you have.
 
 6. The app opens the **Licence** page. Click **Link BluexDEV account**, open the link, sign in and approve the code. The app unlocks when the licence is valid.
 7. Add your Cloudflare account (see [Usage](#usage)).
@@ -74,7 +70,7 @@ cd UpdateIP_Cloudflare
 bash setup.sh
 ```
 
-`setup.sh` installs avahi and Nginx, creates a Python virtual environment, initializes the database, sets up a systemd service (port 5000) and an Nginx reverse proxy (port 80 to 5000). The default login of a manual install is `admin` / `admin`: **change it immediately** in Settings. Licence linking works as described above.
+`setup.sh` installs avahi and Nginx, creates a Python virtual environment, initializes the database, sets up a systemd service (port 5000) and an Nginx reverse proxy (port 80 to 5000). The login is `admin` / `admin`; the app forces you to choose your own password at the first sign-in. Licence linking works as described above.
 </details>
 
 ## Features
@@ -93,7 +89,7 @@ bash setup.sh
 | **Backup & Restore** | Download a full JSON backup; restore selectively with a comparison preview |
 | **Updates** | Daily update check with one-click install and live progress; Debian apt update from Settings |
 | **UI** | Dark Bootstrap 5 interface, mobile friendly, timezone setting |
-| **Security** | bcrypt passwords, session login, random admin password on the Proxmox install |
+| **Security** | bcrypt passwords, session login, forced password change at the first sign-in |
 
 <p align="center"><img src="docs/dashboard.svg" alt="Dashboard illustration with example data" width="100%"></p>
 

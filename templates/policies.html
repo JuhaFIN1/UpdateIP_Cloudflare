@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}WAN Policies - UpdateIP{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <h2><i class="bi bi-signpost-split me-2"></i>WAN Policies</h2>
+    <a href="{{ url_for('policies') }}" class="btn btn-outline-primary"><i class="bi bi-arrow-repeat me-1"></i>Refresh</a>
+</div>
+<p class="text-muted">See which traffic uses which internet connection. This page only reads from UniFi: nothing is changed.</p>
+
+{% if error %}
+<div class="alert alert-warning">{{ error }} Connect UniFi on the WAN Interfaces page first.</div>
+{% else %}
+<div class="row g-3">
+    {% for w in overview.wans %}
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header fs-5"><i class="bi bi-ethernet me-1"></i>{{ w.name }}</div>
+            <div class="card-body">
+                <h6 class="text-info"><i class="bi bi-box-arrow-up-right me-1"></i>Leaves through this connection</h6>
+                {% for o in w.outgoing %}
+                <div class="border rounded p-2 mb-2 {% if not o.enabled %}opacity-50{% endif %}">
+                    <strong>{{ o.title }}</strong>
+                    {% if not o.enabled %}<span class="badge bg-secondary ms-1">off</span>{% endif %}<br>
+                    <span class="small">{{ o.who | join(', ') }} &rarr; {{ o.what }}</span>
+                    {% if o.kill_switch %}<br><span class="small text-muted">If this connection is down, this traffic is blocked.</span>{% endif %}
+                </div>
+                {% else %}
+                <p class="text-muted small">No special rules. Traffic uses the normal network settings.</p>
+                {% endfor %}
+
+                <h6 class="text-success mt-4"><i class="bi bi-box-arrow-in-down-left me-1"></i>Arrives on this connection</h6>
+                {% for i in w.incoming %}
+                <div class="border rounded p-2 mb-2 {% if not i.enabled %}opacity-50{% endif %}">
+                    <strong>{{ i.title }}</strong>
+                    {% if not i.enabled %}<span class="badge bg-secondary ms-1">off</span>{% endif %}<br>
+                    <span class="small">{{ i.proto }} port {{ i.port }} &rarr; {{ i.to }}</span>
+                </div>
+                {% else %}
+                <p class="text-muted small">No services are opened to the internet on this connection.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

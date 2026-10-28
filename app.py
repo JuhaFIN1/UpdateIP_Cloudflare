@@ -27,6 +27,7 @@ from cloudflare_api import (verify_token, list_zones, list_dns_records,
 from updater import check_and_update_ip
 from npm_api import get_npm_client, NpmClient
 from unifi_api import get_unifi_client, clear_cached_client, UnifiClient
+import unifi_policies
 
 from config import APP_VERSION
 import licensing as licence
@@ -96,8 +97,19 @@ def _licensed():
     return licence.is_valid(_licence_base())
 
 
+# The default admin/admin login must be changed before anything else can be used.
+_PASSWORD_OPEN = {'change_password', 'logout', 'static', 'login'}
+
+
+@app.before_request
+def password_gate():
+    if session.get('must_change') and request.endpoint not in _PASSWORD_OPEN:
+        return redirect(url_for('change_password'))
+    return None
+
+
 # Without a valid licence the whole app is locked except login and the licence page.
-_LICENCE_OPEN = {'login', 'logout', 'static', 'licence_page', 'licence_start', 'licence_poll', 'licence_unlink'}
+_LICENCE_OPEN = {'login', 'logout', 'static', 'change_password', 'licence_page', 'licence_start', 'licence_poll', 'licence_unlink'}
 
 
 @app.before_request
@@ -134,7 +146,8 @@ def ensure_admin():
     db = get_db()
     user = db.execute('SELECT id FROM users LIMIT 1').fetchone()
     if not user:
-        db.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)',
+        # Default login admin/admin; the password must be changed at the first login
+        db.execute('INSERT INTO users (username, password_hash, must_change) VALUES (?, ?, 1)',
                    ('admin', hash_password('admin')))
         db.commit()
     db.close()
@@ -608,6 +621,30 @@ def register_auth_selaa_jobs():
 # Routes: Auth
 # ---------------------------------------------------------------------------
 
+@app.route('/change-password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    if request.method == 'POST':
+        new_pw = request.form.get('new_password', '')
+        confirm = request.form.get('confirm_password', '')
+        if len(new_pw) < 8:
+            flash('The password must be at least 8 characters.', 'danger')
+        elif new_pw.lower() == 'admin':
+            flash('Choose a password other than "admin".', 'danger')
+        elif new_pw != confirm:
+            flash('The passwords do not match.', 'danger')
+        else:
+            db = get_db()
+            db.execute('UPDATE users SET password_hash = ?, must_change = 0 WHERE id = ?',
+                       (hash_password(new_pw), session['user_id']))
+            db.commit()
+            db.close()
+            session['must_change'] = False
+            flash('Password changed.', 'success')
+            return redirect(url_for('dashboard'))
+    return render_template('change_password.html')
+
+
 # ─── Licence (free BluexDEV account + licence key; free for now, may become paid at any time) ───
 @app.route('/licence')
 @login_required
@@ -645,7 +682,8 @@ def login():
         if user and check_password(password, user['password_hash']):
             session['user_id'] = user['id']
             session['username'] = user['username']
-            return redirect(url_for('dashboard'))
+            session['must_change'] = bool(user['must_change'])
+            return redirect(url_for('change_password' if user['must_change'] else 'dashboard'))
         flash('Invalid username or password', 'danger')
     return render_template('login.html')
 
@@ -1847,6 +1885,19 @@ def api_status():
 # ---------------------------------------------------------------------------
 # Routes: WAN Interfaces
 # ---------------------------------------------------------------------------
+
+@app.route('/policies')
+@login_required
+def policies():
+    """Read-only overview of UniFi routing policies per WAN (nothing is changed)."""
+    overview, error = None, None
+    client = get_unifi_client()
+    if not client or not client.is_connected():
+        error = 'UniFi is not connected.'
+    else:
+        overview, error = unifi_policies.get_overview(client)
+    return render_template('policies.html', overview=overview, error=error)
+
 
 @app.route('/wan')
 @login_required

@@ -140,6 +140,10 @@ def init_db():
     if not row:
         conn.execute('INSERT INTO settings (id, update_interval, unifi_interval, cloudflare_interval, npm_interval, current_ip, timezone) '
                      'VALUES (1, 300, 300, 3600, 3600, "", "UTC")')
+    # Migrate: users.must_change (default admin password must be changed at first login)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+    if 'must_change' not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN must_change INTEGER NOT NULL DEFAULT 0")
     # Migrate: add sync interval columns to settings if missing
     cols = [r[1] for r in conn.execute("PRAGMA table_info(settings)").fetchall()]
     if 'unifi_interval' not in cols:

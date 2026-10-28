@@ -106,22 +106,9 @@ python3 -m venv "$APP/venv"
 "$APP/venv/bin/pip" install --quiet --upgrade pip
 "$APP/venv/bin/pip" install --quiet -r "$APP/requirements.txt"
 
-# Database + a random admin password (not admin/admin); stored only in a root-only file
+# Database. The first start creates the login admin/admin; the app forces a new password at the first sign-in.
 cd "$APP"
-umask 077
-"$APP/venv/bin/python" - <<'PY'
-import secrets, sqlite3, bcrypt
-from database import init_db, DB_PATH
-init_db()
-pw = secrets.token_urlsafe(12)
-db = sqlite3.connect(DB_PATH)
-if not db.execute('SELECT 1 FROM users LIMIT 1').fetchone():
-    db.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', ('admin', bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()))
-    db.commit()
-    open('/root/updateip-admin.txt', 'w').write('username: admin\npassword: %s\n' % pw)
-db.close()
-PY
-umask 022
+"$APP/venv/bin/python" -c "from database import init_db; init_db()"
 
 cat > /etc/systemd/system/updateip.service <<'CFG'
 [Unit]
@@ -185,7 +172,8 @@ IP="$(pct exec "$CTID" -- hostname -I | awk '{print $1}')"
 echo
 printf '%s✔ UpdateIP ready%s  (CT %s, Debian 13)\n' "$C_GRN$C_BLD" "$C_RST" "$CTID"
 printf '  Open:     %shttp://%s%s  (or http://updateip.local)\n' "$C_CYN" "$IP" "$C_RST"
-printf '  Login:    username and password are in the container: pct exec %s -- cat /root/updateip-admin.txt\n' "$CTID"
+printf '  Login:    admin / admin  (you must choose your own password at the first sign-in)
+'
 printf '  Tip:      use a static IP or a DHCP reservation for this container.\n'
 printf '  Update:   in the app, Settings -> Update.  Log: pct exec %s -- cat /var/log/updateip-install.log\n' "$CTID"
 printf '  %sLicence: a free BluexDEV account (auth.selaa.fi) and licence key are required. Free for now; may become paid at any time.%s\n\n' "$C_YEL" "$C_RST"
