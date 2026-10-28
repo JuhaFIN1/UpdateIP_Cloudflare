@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="470" viewBox="0 0 1000 470" font-family="Segoe UI,Helvetica,Arial,sans-serif" role="img" aria-label="Dashboard illustration with example data">
+  <rect width="1000" height="470" rx="14" fill="#1a1d21" stroke="#3a4048" stroke-width="2"/>
+  <rect width="190" height="470" rx="14" fill="#212529"/>
+  <text x="24" y="42" fill="#fff" font-size="20" font-weight="700">UpdateIP</text>
+  <rect x="12" y="66" width="166" height="34" rx="6" fill="#2d3238"/>
+  <g fill="#c9d1de" font-size="14"><text x="28" y="88">Dashboard</text><text x="28" y="128">Accounts</text><text x="28" y="160">DNS Records</text><text x="28" y="192">WAN Interfaces</text><text x="28" y="224">Proxy Manager</text><text x="28" y="256">Logs</text><text x="28" y="288">Settings</text></g>
+  <text x="214" y="46" fill="#fff" font-size="24" font-weight="700">Dashboard</text>
+  <rect x="772" y="22" width="100" height="30" rx="5" fill="#0d6efd"/><text x="822" y="42" fill="#fff" font-size="13" text-anchor="middle">Check &amp; Update</text>
+  <rect x="880" y="22" width="100" height="30" rx="5" fill="#f5c518"/><text x="930" y="42" fill="#222" font-size="13" text-anchor="middle">Force Update All</text>
+  <g stroke-width="2"><rect x="214" y="72" width="240" height="84" rx="8" fill="#232a44" stroke="#3b57d9"/><rect x="466" y="72" width="240" height="84" rx="8" fill="#232a44" stroke="#3b57d9"/><rect x="718" y="72" width="262" height="84" rx="8" fill="#1f3a2c" stroke="#2f7a50"/></g>
+  <g fill="#c9d1de" font-size="13" text-anchor="middle"><text x="334" y="96">WAN (Example ISP A)</text><text x="586" y="96">WAN2 (Example ISP B)</text><text x="849" y="96">Monitored Records</text></g>
+  <g fill="#e879b9" font-size="22" font-weight="600" text-anchor="middle"><text x="334" y="128">203.0.113.10</text><text x="586" y="128">198.51.100.7</text></g>
+  <text x="849" y="132" fill="#fff" font-size="30" font-weight="700" text-anchor="middle">3</text>
+  <rect x="214" y="176" width="766" height="200" rx="8" fill="#212529" stroke="#3a4048"/>
+  <text x="230" y="202" fill="#e6e6e6" font-size="15" font-weight="600">Auto-Update Records</text>
+  <g fill="#9aa5b8" font-size="13" font-weight="600"><text x="230" y="232">Record</text><text x="470" y="232">WAN</text><text x="620" y="232">Current IP</text><text x="780" y="232">Proxied</text><text x="880" y="232">Status</text></g>
+  <g fill="#e879b9" font-size="13" font-family="Consolas,monospace"><text x="230" y="266">home.example.com</text><text x="230" y="302">www.example.com</text><text x="230" y="338">vpn.example.net</text></g>
+  <g fill="#c9d1de" font-size="13"><text x="470" y="266">WAN</text><text x="470" y="302">WAN2</text><text x="470" y="338">WAN</text><text x="620" y="266">203.0.113.10</text><text x="620" y="302">198.51.100.7</text><text x="620" y="338">203.0.113.10</text></g>
+  <g fill="#f5c518"><rect x="780" y="252" width="62" height="20" rx="10"/><rect x="780" y="288" width="62" height="20" rx="10"/></g><rect x="780" y="324" width="62" height="20" rx="10" fill="#6c757d"/>
+  <g fill="#222" font-size="12" text-anchor="middle"><text x="811" y="267">Proxied</text><text x="811" y="303">Proxied</text></g><text x="811" y="339" fill="#fff" font-size="12" text-anchor="middle">DNS only</text>
+  <g fill="#2f9e60"><rect x="880" y="252" width="40" height="20" rx="10"/><rect x="880" y="288" width="40" height="20" rx="10"/><rect x="880" y="324" width="40" height="20" rx="10"/></g>
+  <g fill="#fff" font-size="12" text-anchor="middle"><text x="900" y="267">OK</text><text x="900" y="303">OK</text><text x="900" y="339">OK</text></g>
+  <text x="214" y="410" fill="#9aa5b8" font-size="14">Recent Activity</text><text x="214" y="436" fill="#6c757d" font-size="13">No update activity yet.</text>
+  <text x="980" y="456" fill="#6c757d" font-size="11" text-anchor="end">Illustration with example data</text>
+</svg>

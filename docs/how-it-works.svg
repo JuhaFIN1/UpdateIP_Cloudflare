@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="330" viewBox="0 0 1000 330" font-family="Segoe UI,Helvetica,Arial,sans-serif" role="img" aria-label="How UpdateIP works">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#4f8cff"/></marker></defs>
+  <rect width="1000" height="330" rx="16" fill="#1a1d21"/>
+  <g fill="#23272b" stroke="#3a4048" stroke-width="2">
+    <rect x="30" y="50" width="200" height="90" rx="12"/><rect x="30" y="190" width="200" height="90" rx="12"/>
+    <rect x="370" y="90" width="260" height="150" rx="14" stroke="#4f8cff" stroke-width="3"/>
+    <rect x="770" y="50" width="200" height="90" rx="12"/><rect x="770" y="190" width="200" height="90" rx="12"/>
+  </g>
+  <g fill="#e6e6e6" font-size="20" font-weight="600" text-anchor="middle">
+    <text x="130" y="88">WAN 1</text><text x="130" y="228">WAN 2</text>
+    <text x="500" y="132" font-size="26">UpdateIP</text>
+    <text x="870" y="88">Cloudflare DNS</text><text x="870" y="228">Nginx Proxy Manager</text>
+  </g>
+  <g fill="#9aa5b8" font-size="15" text-anchor="middle">
+    <text x="130" y="112">IP changes</text><text x="130" y="252">IP changes</text>
+    <text x="500" y="168">detects the new IP</text><text x="500" y="192">(UniFi or IP services)</text><text x="500" y="216">and logs every change</text>
+    <text x="870" y="112">A records updated</text><text x="870" y="252">proxy hosts managed</text>
+  </g>
+  <g stroke="#4f8cff" stroke-width="3" fill="none" marker-end="url(#a)">
+    <path d="M232 95H366"/><path d="M232 235H366"/><path d="M632 130H766"/><path d="M632 200H766"/>
+  </g>
+</svg>

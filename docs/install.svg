@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="190" viewBox="0 0 1000 190" font-family="Segoe UI,Helvetica,Arial,sans-serif" role="img" aria-label="Install in four steps">
+  <rect width="1000" height="190" rx="16" fill="#1a1d21"/>
+  <g fill="#23272b" stroke="#3a4048" stroke-width="2">
+    <rect x="20" y="25" width="225" height="140" rx="12"/><rect x="265" y="25" width="225" height="140" rx="12"/>
+    <rect x="510" y="25" width="225" height="140" rx="12"/><rect x="755" y="25" width="225" height="140" rx="12"/>
+  </g>
+  <g fill="#4f8cff"><circle cx="52" cy="57" r="18"/><circle cx="297" cy="57" r="18"/><circle cx="542" cy="57" r="18"/><circle cx="787" cy="57" r="18"/></g>
+  <g fill="#fff" font-size="19" font-weight="700" text-anchor="middle"><text x="52" y="64">1</text><text x="297" y="64">2</text><text x="542" y="64">3</text><text x="787" y="64">4</text></g>
+  <g fill="#e6e6e6" font-size="19" font-weight="600"><text x="80" y="64">Free account</text><text x="325" y="64">One command</text><text x="570" y="64">Link licence</text><text x="815" y="64">Add Cloudflare</text></g>
+  <g fill="#9aa5b8" font-size="15">
+    <text x="40" y="104">Create it at</text><text x="40" y="126">auth.selaa.fi</text>
+    <text x="285" y="104">Paste it into the</text><text x="285" y="126">Proxmox shell</text>
+    <text x="530" y="104">Approve the code</text><text x="530" y="126">in the app</text>
+    <text x="775" y="104">Add your API token</text><text x="775" y="126">and pick records</text>
+  </g>
+</svg>
