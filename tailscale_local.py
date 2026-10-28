@@ -114,7 +114,10 @@ def login():
     if not installed():
         return False
     if _up_proc is not None and _up_proc.poll() is None:
-        _up_proc.terminate()
+        return True                      # a login is already waiting for the user; do not restart it
+    pending = status()
+    if pending['state'] == 'Running' or pending['auth_url']:
+        return True
     try:
         _up_proc = subprocess.Popen(['tailscale', 'up', '--accept-dns=false', '--accept-routes=false'],
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -127,7 +130,7 @@ def diagnostics():
     """Plain text for troubleshooting: Tailscale's own status and the last lines of its log. Contains no secrets."""
     parts = []
     for title, args in (('tailscale version', ['tailscale', 'version']), ('tailscale status', ['tailscale', 'status']),
-                        ('tailscaled log', ['journalctl', '-u', 'tailscaled', '--no-pager', '-n', '25'])):
+                        ('tailscaled log', ['journalctl', '-u', 'tailscaled', '--no-pager', '-n', '60'])):
         r = _run(args, timeout=20)
         text = ((r.stdout or '') + (r.stderr or '')).strip() if r else 'could not run'
         parts.append('== %s ==' % title + chr(10) + text[-2500:])

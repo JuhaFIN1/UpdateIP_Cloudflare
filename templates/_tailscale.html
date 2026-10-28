@@ -11,7 +11,8 @@ window.TSBox = (() => {
     const s = await fetch('{{ url_for("tailscale_local_status") }}').then(r => r.json());
     const st = await fetch('{{ url_for("tailscale_status") }}').then(r => r.json());
     draw(s, st);
-    const busy = s.installing.state === 'running' || (loggingIn && s.state !== 'Running');
+    // keep watching while an install runs or a login is pending (also after the page was reopened)
+    const busy = s.installing.state === 'running' || (s.state !== 'Running' && (loggingIn || !!s.auth_url));
     if (busy) timer = setTimeout(refresh, 3000);
     const ready = s.state === 'Running' || st.connected;
     if (ready && !readyFired) {
