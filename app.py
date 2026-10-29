@@ -2824,6 +2824,8 @@ def create_app():
             apply_mdns_hostname(s['mdns_hostname'])
     except Exception:
         pass
+    from console_setup import ensure_console_defaults
+    ensure_console_defaults()
     scheduler.init_app(app)
     scheduler.start()
     reschedule_job()

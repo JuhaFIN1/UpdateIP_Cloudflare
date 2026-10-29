@@ -109,6 +109,8 @@ python3 -m venv "$APP/venv"
 # Database. The first start creates the login admin/admin; the app forces a new password at the first sign-in.
 cd "$APP"
 "$APP/venv/bin/python" -c "from database import init_db; init_db()"
+# Console defaults: root auto-login, banner with IP/URL, apt never asks questions.
+"$APP/venv/bin/python" -c "from console_setup import ensure_console_defaults; ensure_console_defaults()"
 
 cat > /etc/systemd/system/updateip.service <<'CFG'
 [Unit]
