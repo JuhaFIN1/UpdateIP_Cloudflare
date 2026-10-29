@@ -8,7 +8,7 @@ import subprocess
 
 _GETTY = ('[Service]\n'
           'ExecStart=\n'
-          'ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM\n')
+          'ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud pts/%I 115200,38400,9600 $TERM\n')
 _APT = ('Dpkg::Options { "--force-confdef"; "--force-confold"; };\n'
         'APT::Get::Assume-Yes "true";\n')
 _PROFILE = 'export DEBIAN_FRONTEND=noninteractive\n'
